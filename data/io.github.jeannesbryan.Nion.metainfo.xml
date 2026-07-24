@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.jeannesbryan.Nion</id>
+  <name>NiOn</name>
+  <summary>Minimal browser over Tor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer_name>Jeannes Bryan</developer_name>
+  <description>
+    <p>NiOn (Minimal Onion) is a minimal Linux web browser for clearnet and .onion sites. Browsing traffic is routed through NiOn's bundled Tor runtime.</p>
+    <p>NiOn provides multi-tab browsing, persistent sessions, Onion-Location discovery, downloads, and practical fail-closed privacy hardening.</p>
+    <p>NiOn is not Tor Browser and does not claim Tor Browser-grade anti-fingerprinting or anonymity guarantees.</p>
+  </description>
+  <launchable type="desktop-id">io.github.jeannesbryan.Nion.desktop</launchable>
+  <url type="homepage">https://github.com/jeannesbryan/nion</url>
+  <url type="bugtracker">https://github.com/jeannesbryan/nion/issues</url>
+  <provides>
+    <binary>nion</binary>
+  </provides>
+  <releases>
+    <release version="1.0.0" date="2026-07-25" type="stable"/>
+    <release version="0.11.0" date="2026-07-25"/>
+    <release version="0.10.0" date="2026-07-25"/>
+  </releases>
+</component>

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=NiOn
+GenericName=Web Browser
+Comment=Minimal browser over Tor
+Exec=nion
+Icon=io.github.jeannesbryan.Nion
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=Tor;Onion;Browser;Privacy;Anonymous;
+StartupNotify=true
+DBusActivatable=false

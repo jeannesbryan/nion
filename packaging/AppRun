@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+export APPDIR="$HERE"
+export PATH="$HERE/usr/bin${PATH:+:$PATH}"
+export XDG_DATA_DIRS="$HERE/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+export NION_TOR_BINARY="$HERE/usr/lib/nion/tor/tor"
+unset NION_ALLOW_SYSTEM_TOR || true
+
+export NION_WEBKIT_EXEC_DIR="$HERE/usr/lib/nion/webkit-exec"
+# WEBKIT_EXEC_PATH helps developer-mode builds; the preload shim handles
+# distribution builds whose helper path is compiled in.
+export WEBKIT_EXEC_PATH="$NION_WEBKIT_EXEC_DIR"
+
+if [[ -d "$HERE/usr/lib/gio/modules" ]]; then
+  export GIO_EXTRA_MODULES="$HERE/usr/lib/gio/modules${GIO_EXTRA_MODULES:+:$GIO_EXTRA_MODULES}"
+fi
+
+SHIM="$HERE/usr/lib/nion/libnion-execshim.so"
+if [[ -f "$SHIM" ]]; then
+  export LD_PRELOAD="$SHIM${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+
+if [[ "${1:-}" == "--appimage-diagnose" ]]; then
+  echo "NiOn AppImage diagnostics"
+  echo "APPDIR=$APPDIR"
+  echo "Profile=${XDG_DATA_HOME:-$HOME/.local/share}/nion"
+  echo "Config=${XDG_CONFIG_HOME:-$HOME/.config}/nion"
+  echo "Cache=${XDG_CACHE_HOME:-$HOME/.cache}/nion"
+  echo "WebKit exec=$NION_WEBKIT_EXEC_DIR"
+  echo "Tor=$NION_TOR_BINARY"
+  echo
+
+  for host_tool in bwrap xdg-dbus-proxy; do
+    if command -v "$host_tool" >/dev/null 2>&1; then
+      echo "PASS host sandbox helper: $host_tool"
+    else
+      echo "WARN host sandbox helper not found: $host_tool"
+    fi
+  done
+  echo
+
+  fail=0
+  for f in "$HERE/usr/bin/nion" \
+           "$NION_TOR_BINARY" \
+           "$NION_WEBKIT_EXEC_DIR/WebKitWebProcess" \
+           "$NION_WEBKIT_EXEC_DIR/WebKitNetworkProcess"; do
+    if [[ -x "$f" ]]; then echo "PASS executable: $f"; else echo "FAIL executable: $f"; fail=1; fi
+  done
+  if [[ -x "$NION_WEBKIT_EXEC_DIR/WebKitGPUProcess" ]]; then
+    echo "PASS executable: $NION_WEBKIT_EXEC_DIR/WebKitGPUProcess"
+  else
+    echo "INFO WebKitGPUProcess not shipped by this WebKit build"
+  fi
+
+  echo
+  echo "Main binary dependency check:"
+  ldd_tmp="$(mktemp "${TMPDIR:-/tmp}/nion-appimage-ldd.XXXXXX")"
+  if ldd "$HERE/usr/bin/nion" | tee "$ldd_tmp" | grep -q 'not found'; then
+    grep 'not found' "$ldd_tmp" || true
+    fail=1
+  else
+    echo "PASS: no unresolved main-binary libraries"
+  fi
+  rm -f "$ldd_tmp"
+
+  echo
+  echo "Tor version:"
+  env -u LD_PRELOAD -u NION_WEBKIT_EXEC_DIR "$NION_TOR_BINARY" --version 2>&1 | head -n1 || fail=1
+  exit "$fail"
+fi
+
+exec "$HERE/usr/bin/nion" "$@"
