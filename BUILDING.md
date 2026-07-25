@@ -1,8 +1,8 @@
-# Building NiOn 1.0.0
+# Building NiOn 1.1.0
 
 ## Supported production target
 
-The 1.0.0 production AppImage pipeline targets GNU/Linux x86_64.
+The 1.1.0 production AppImage pipeline targets GNU/Linux x86_64.
 
 ## Debian / Ubuntu dependencies
 
@@ -60,8 +60,8 @@ The builder:
 Expected output:
 
 ```text
-dist/NiOn-1.0.0-x86_64.AppImage
-dist/NiOn-1.0.0-x86_64.AppImage.sha256
+dist/NiOn-1.1.0-x86_64.AppImage
+dist/NiOn-1.1.0-x86_64.AppImage.sha256
 ```
 
 ## Validate
@@ -79,11 +79,11 @@ Then perform the live scenarios in `TESTING.md` and the runtime network audit:
 
 ## GitHub release build
 
-The repository includes `.github/workflows/release.yml`. For the 1.0.0 release:
+The repository includes `.github/workflows/release.yml`. For the 1.1.0 release:
 
 ```bash
-git tag -a v1.0.0 -m "NiOn 1.0.0"
-git push origin v1.0.0
+git tag -a v1.1.0 -m "NiOn 1.1.0"
+git push origin v1.1.0
 ```
 
 The workflow builds and validates the x86_64 AppImage and then creates/updates the corresponding GitHub release with the AppImage and SHA-256 asset.

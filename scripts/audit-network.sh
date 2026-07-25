@@ -30,7 +30,7 @@ find_pids() {
   ' | sort -u
 }
 
-printf 'NiOn 1.0.0 runtime network audit\n'
+printf 'NiOn 1.1.0 runtime network audit\n'
 printf 'Sampling NiOn/WebKit TCP and UDP sockets for %s seconds.\n' "$DURATION"
 STATE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/nion/tor-runtime.ini"
 SOCKS_PORT="$(awk -F= '$1 == "socks-port" {print $2; exit}' "$STATE_FILE" 2>/dev/null || true)"

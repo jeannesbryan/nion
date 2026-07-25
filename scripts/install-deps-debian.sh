@@ -24,4 +24,4 @@ sudo apt install -y \
 
 echo "A system Tor package is not required by NiOn."
 echo "Run ./scripts/fetch-tor-runtime.sh to prepare the signed bundled Tor runtime."
-echo "Run ./scripts/build-appimage.sh for the 1.0.0 AppImage pipeline."
+echo "Run ./scripts/build-appimage.sh for the 1.1.0 AppImage pipeline."

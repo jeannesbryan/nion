@@ -140,3 +140,24 @@ The experimental Tor Circuit viewer was removed in 0.10.0. NiOn does not expose 
 ## Onion-Location
 
 NiOn only accepts an advertised Onion-Location when the defining page is HTTPS clearnet and the target is a valid HTTP/HTTPS Tor v3 `.onion` URL. Clicking the badge is an explicit user action and opens the onion target in a separate tab.
+## HTTPS-First clearnet warning (1.1.0 Stage 1)
+
+NiOn resolves schemeless clearnet addresses to HTTPS. If a top-level clearnet navigation explicitly targets plain HTTP, NiOn blocks that navigation first and asks for confirmation. Continuing allows that plain-HTTP origin only in the current tab while the tab remains on it. The allowance is cleared when a non-HTTP page commits and is never written to the persistent profile.
+
+The warning is intentionally not applied to `http://` Tor v3 `.onion` addresses. Onion services remain inside Tor and do not depend on an exit relay. This UI distinction does not claim that HTTP and HTTPS are equivalent; it keeps the warning focused on the clearnet exit path.
+
+
+### Local bookmarks
+
+NiOn 1.1.0 Stage 2 stores bookmarks locally in `~/.local/share/nion/bookmarks.ini`. Bookmark titles and URLs are not synchronized or uploaded by NiOn. Opening a bookmark performs the same Tor-routed navigation as entering that URL normally.
+
+
+## Per-site data clearing (1.1.0 Stage 3)
+
+**Clear Data for This Site…** does not run the global website-data clear. NiOn first asks WebKit for stored website-data records, selects records attributed to the active HTTP(S) host, and requests removal only for those matching records.
+
+WebKit normally groups stored website data by domain/host name. For a subdomain, WebKit can report a parent-domain record; NiOn treats that parent-domain record as belonging to the current site. This means related subdomains can share a WebKit data bucket. NiOn does not deliberately select unrelated third-party website-data records.
+
+The operation can remove cookies and other persistent website state for the selected record, so it can sign the user out of that site. A confirmation dialog is always shown first. After a successful clear, the active page is reloaded without cache when it is still the current tab.
+
+The global **Clear Browsing Data…** command remains separate and clears website data across the whole NiOn profile.

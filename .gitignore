@@ -1,6 +1,3 @@
-# NiOn — Minimal Onion
-# Build output, downloaded runtimes, release artifacts, and local files.
-
 # Meson / compiler output
 /build/
 /build-*/
@@ -12,28 +9,27 @@ compile_commands.json
 *.so
 *.so.*
 
-# AppImage / AppDir output
+# NiOn AppImage output
 /NiOn.AppDir/
 /Nion.AppDir/
-/build-appimage/
 /dist/
-/squashfs-root/
+/build-appimage/
 *.AppImage
 *.AppImage.sha256
+/squashfs-root/
 
-# Downloaded Tor runtime and local build tools
-# Keep runtime/README.md tracked; only ignore the downloaded runtime.
+# Downloaded/private build runtimes and tools
 /runtime/tor/
 /.tools/
 
-# Generated release archives, if created locally
+# Generated release archives
 /release/
 /NiOn-*.tar.gz
 /NiOn-*.tar.gz.sha256
 /NiOn-*.zip
 /NiOn-*.zip.sha256
 
-# Logs, crash dumps, and temporary files
+# Logs / crash output / temporary files
 *.log
 *.tmp
 *.temp

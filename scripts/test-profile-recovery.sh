@@ -14,6 +14,7 @@ mkdir -p "$XDG_DATA_HOME/nion" "$XDG_CONFIG_HOME/nion" "$XDG_CACHE_HOME/nion"
 printf 'this is not a key file\n[broken' > "$XDG_DATA_HOME/nion/session.ini"
 printf '[General]\nrestore-session=definitely\n' > "$XDG_CONFIG_HOME/nion/preferences.ini"
 printf '[History]\ncount=99999999\n' > "$XDG_DATA_HOME/nion/downloads.ini"
+printf '[Bookmarks]\ncount=99999999\n' > "$XDG_DATA_HOME/nion/bookmarks.ini"
 printf 'not sqlite\n' > "$XDG_DATA_HOME/nion/cookies.sqlite"
 
 # /bin/false makes Tor fail immediately so this test never reaches the public network.
@@ -33,6 +34,7 @@ for pattern in \
   "$XDG_DATA_HOME/nion/session.ini.corrupt-"'*' \
   "$XDG_CONFIG_HOME/nion/preferences.ini.corrupt-"'*' \
   "$XDG_DATA_HOME/nion/downloads.ini.corrupt-"'*' \
+  "$XDG_DATA_HOME/nion/bookmarks.ini.corrupt-"'*' \
   "$XDG_DATA_HOME/nion/cookies.sqlite.corrupt-"'*'; do
   compgen -G "$pattern" >/dev/null || { echo "FAIL missing quarantine match: $pattern" >&2; fail=1; }
 done
@@ -43,5 +45,5 @@ if (( fail )); then
   exit 1
 fi
 
-echo 'PASS isolated corrupt-profile recovery: malformed session/preferences/download history/cookie DB were quarantined.'
+echo 'PASS isolated corrupt-profile recovery: malformed session/preferences/download history/bookmarks/cookie DB were quarantined.'
 echo "Temporary test profile: $TMP (removed automatically)"

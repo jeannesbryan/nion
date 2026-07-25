@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APPIMAGE="${1:-$ROOT/dist/NiOn-1.0.0-x86_64.AppImage}"
+APPIMAGE="${1:-$ROOT/dist/NiOn-1.1.0-x86_64.AppImage}"
 [[ -x "$APPIMAGE" ]] || { echo "AppImage not found/executable: $APPIMAGE" >&2; exit 1; }
 
 echo "== Packaged diagnostics =="

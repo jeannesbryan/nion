@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="1.0.0"
+VERSION="1.1.0"
 fail=0
 
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -109,7 +109,7 @@ for dir in "${XDG_DATA_HOME:-$HOME/.local/share}/nion" \
     if [[ "$mode" == '700' ]]; then
       pass "$dir mode 700"
     else
-      warn "$dir mode is ${mode:-unknown}; NiOn 1.0.0 will attempt to normalize it to 700 on start"
+      warn "$dir mode is ${mode:-unknown}; NiOn 1.1.0 will attempt to normalize it to 700 on start"
     fi
   fi
 done

@@ -1,47 +1,29 @@
-# NiOn 1.0.0 — Stable
+# NiOn 1.1.0 — Stable
 
-NiOn reaches its first stable release.
-
-**NiOn (Minimal Onion)** is a minimal Linux browser for clearnet and `.onion` sites. It uses GTK 4 + WebKitGTK 6 and routes browsing traffic through its bundled Tor runtime.
+NiOn 1.1.0 keeps the browser intentionally small while improving everyday privacy and browsing controls.
 
 ## Highlights
 
-- clearnet and Tor v3 `.onion` browsing through Tor;
-- multi-tab GTK/WebKitGTK interface;
-- bundled, signature-verified Tor Expert Bundle runtime;
-- persistent cookies/login sessions and restorable tabs;
-- Onion-Location detection;
-- downloads with persistent `Ctrl+J` history;
-- Find in Page, zoom, hard reload, fullscreen and search-engine preference;
-- fail-closed networking when Tor is unavailable;
-- production-oriented x86_64 AppImage packaging with WebKit subprocess handling;
-- stable version-independent profile path for AppImage upgrades.
+- HTTPS-First behavior for clearnet navigation, with a warning before explicit plain-HTTP clearnet pages.
+- Simple local bookmarks with `Ctrl+D`, a toolbar bookmark toggle, and Open/Rename/Delete management.
+- **Clear Data for This Site…** to remove WebKit data for the current site without clearing unrelated sites.
+- Per-tab audio indicator and one-click mute/unmute.
+- Persistent profile remains compatible with NiOn 1.0.0.
+- Bundled Tor, fail-closed routing, Onion-Location, downloads, session restore, AppImage packaging, and existing privacy hardening remain intact.
 
-## Download
-
-For most users, download:
+## Assets
 
 ```text
-NiOn-1.0.0-x86_64.AppImage
-NiOn-1.0.0-x86_64.AppImage.sha256
+NiOn-1.1.0-x86_64.AppImage
+NiOn-1.1.0-x86_64.AppImage.sha256
 ```
 
-Verify:
+## Verify
 
 ```bash
-sha256sum -c NiOn-1.0.0-x86_64.AppImage.sha256
-chmod +x NiOn-1.0.0-x86_64.AppImage
-./NiOn-1.0.0-x86_64.AppImage
+sha256sum -c NiOn-1.1.0-x86_64.AppImage.sha256
+chmod +x NiOn-1.1.0-x86_64.AppImage
+./NiOn-1.1.0-x86_64.AppImage
 ```
 
-## Important privacy note
-
-NiOn is **not Tor Browser** and does not claim Tor Browser-grade anti-fingerprinting or anonymity guarantees. Its goal is a small Linux browser with Tor-only routing and practical leak-reduction hardening.
-
-## Upgrade
-
-The browser profile lives outside the AppImage under the usual XDG directories, so replacing the AppImage is designed to keep the existing NiOn profile. See `UPGRADING.md`.
-
-## License
-
-NiOn is released under GPL-3.0-or-later.
+NiOn is not Tor Browser and does not claim Tor Browser-grade anti-fingerprinting or anonymity guarantees.

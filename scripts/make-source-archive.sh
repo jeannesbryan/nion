@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="1.0.0"
+VERSION="1.1.0"
 OUTDIR="$ROOT/release"
 OUT="$OUTDIR/NiOn-${VERSION}-source.tar.gz"
 mkdir -p "$OUTDIR"

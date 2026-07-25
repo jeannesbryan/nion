@@ -19,8 +19,8 @@ NiOn keeps its persistent browser profile outside the AppImage. The profile path
 Example:
 
 ```bash
-chmod +x NiOn-1.0.0-x86_64.AppImage
-./NiOn-1.0.0-x86_64.AppImage
+chmod +x NiOn-1.1.0-x86_64.AppImage
+./NiOn-1.1.0-x86_64.AppImage
 ```
 
 Do **not** copy profile data into the AppImage or AppDir.
@@ -58,3 +58,7 @@ Downgrading is not a primary compatibility target. Before downgrading across maj
 ```
 
 NiOn 1.0.0 uses session format 1 inherited from the 0.x series, so the 0.11.0 → 1.0.0 transition does not intentionally introduce a new profile format.
+
+## 1.1.x bookmark data
+
+NiOn 1.1.0 adds `~/.local/share/nion/bookmarks.ini`. It is additive and does not change the existing 1.0.0 cookie, session, download-history, or WebKit profile locations. Replacing the AppImage continues to reuse the same profile directory.

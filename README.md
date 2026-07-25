@@ -2,8 +2,6 @@
 
 **NiOn — Minimal Onion** is a minimal Linux web browser for clearnet and `.onion` sites. It uses GTK 4 and WebKitGTK 6 for the browser UI/engine and routes browsing traffic through its own bundled Tor runtime.
 
-**Current release: 1.0.0 Stable**
-
 > NiOn is not Tor Browser. It does not claim Tor Browser-grade anti-fingerprinting, anonymity, or browser-hardening guarantees.
 
 ## Why NiOn?
@@ -23,6 +21,8 @@ NiOn is intentionally small. The goal is not to reproduce a full desktop browser
 - Onion-Location detection with an **Onion** badge that opens the advertised onion URL in a new tab.
 - Downloads through the Tor-proxied WebKit network session, with `Ctrl+J` history.
 - Find in Page, page zoom, hard reload, fullscreen, Home/New Tab, and configurable search engine.
+- Simple local bookmarks with `Ctrl+D`, Open/Rename/Delete management, and a live bookmark button beside the address bar.
+- Per-tab audio indicator and one-click mute/unmute for pages playing sound.
 - Internal error pages and Tor-aware status information.
 - Persistent browser profile outside the AppImage, so replacing the AppImage does not intentionally erase logins or tabs.
 - Linux x86_64 AppImage packaging pipeline with bundled WebKit subprocesses and Tor runtime.
@@ -31,7 +31,7 @@ NiOn is intentionally small. The goal is not to reproduce a full desktop browser
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
-│ ←  →  ↻  ⌂ │ URL / Search                      │ ≡      │
+│ ←  →  ↻  ⌂ │ URL / Search                 │ ☆ │ ≡   │
 ├──────────────────────────────────────────────────────────┤
 │ Tab 1 × │ Tab 2 × │ +                                  │
 ├──────────────────────────────────────────────────────────┤
@@ -45,13 +45,13 @@ NiOn is intentionally small. The goal is not to reproduce a full desktop browser
 
 ## AppImage
 
-NiOn 1.0.0 targets **GNU/Linux x86_64** for the production AppImage pipeline.
+NiOn 1.1.0 targets **GNU/Linux x86_64** for the production AppImage pipeline.
 
 After building:
 
 ```bash
-chmod +x dist/NiOn-1.0.0-x86_64.AppImage
-./dist/NiOn-1.0.0-x86_64.AppImage
+chmod +x dist/NiOn-1.1.0-x86_64.AppImage
+./dist/NiOn-1.1.0-x86_64.AppImage
 ```
 
 The AppImage contains NiOn, the Tor runtime, WebKitGTK subprocess executables, and practical user-space runtime dependencies. Host graphics drivers, glibc, and other host-core components are intentionally not replaced.
@@ -90,8 +90,8 @@ Full build documentation is in [BUILDING.md](BUILDING.md).
 Expected artifacts:
 
 ```text
-dist/NiOn-1.0.0-x86_64.AppImage
-dist/NiOn-1.0.0-x86_64.AppImage.sha256
+dist/NiOn-1.1.0-x86_64.AppImage
+dist/NiOn-1.1.0-x86_64.AppImage.sha256
 ```
 
 Run the stable release checks with:
@@ -121,6 +121,7 @@ The runtime scenarios are documented in [TESTING.md](TESTING.md).
 | `Ctrl+Tab` / `Ctrl+PageDown` | Next tab |
 | `Ctrl+Shift+Tab` / `Ctrl+PageUp` | Previous tab |
 | `Ctrl+J` | Downloads |
+| `Ctrl+D` | Bookmark current page |
 
 ## Persistent profile
 
@@ -131,6 +132,7 @@ NiOn keeps its profile outside the executable/AppImage:
 ├── cookies.sqlite
 ├── session.ini
 ├── downloads.ini
+├── bookmarks.ini
 ├── tor-runtime.ini
 ├── tor/
 └── WebKit website data...
@@ -142,7 +144,7 @@ NiOn keeps its profile outside the executable/AppImage:
 └── preferences.ini
 ```
 
-This layout is version-independent. Replacing `NiOn-1.0.0-x86_64.AppImage` with a later NiOn AppImage is designed to reuse the same profile. See [UPGRADING.md](UPGRADING.md).
+This layout is version-independent. Replacing `NiOn-1.1.0-x86_64.AppImage` with a later NiOn AppImage is designed to reuse the same profile. See [UPGRADING.md](UPGRADING.md).
 
 Malformed NiOn-owned profile files are quarantined rather than silently overwritten when possible. An obviously invalid cookie database is also quarantined before WebKit opens it.
 
@@ -182,6 +184,32 @@ A passing sample is useful evidence, not a mathematical proof that every possibl
 
 When an HTTPS clearnet page advertises a valid Tor v3 onion URL using Onion-Location, NiOn shows an **Onion** badge. Clicking it opens the advertised `.onion` address inside NiOn in a new tab.
 
+
+## Bookmarks
+
+NiOn keeps bookmarks intentionally simple and local. Press `Ctrl+D` or click the bookmark button beside the address bar.
+
+The toolbar button reflects the current page automatically:
+
+- `☆` means the current page is not bookmarked;
+- `★` means its exact URL already exists in `bookmarks.ini`;
+- clicking the button toggles the bookmark;
+- New Tab, blank pages, and internal error pages keep the button disabled.
+
+Open **Bookmarks** from the hamburger menu to open, rename, or delete saved entries.
+
+Bookmarks are stored locally in `~/.local/share/nion/bookmarks.ini`. Duplicate URLs are not added twice, and bookmarks do not sync to any cloud service.
+
+## Tab audio & mute
+
+When a tab is playing audio, NiOn shows a compact speaker button in that tab. Click it to mute/unmute only that WebView. The icon follows WebKit's `is-muted` state, while visibility follows `is-playing-audio`. A muted state is saved with NiOn session restore so it does not leak into unrelated tabs.
+
+## Clear Data for This Site
+
+For the current HTTP(S) site, NiOn asks WebKit for stored website-data records attributed to that host/domain and removes only the matching records. This can include cookies, cache, local/session storage, IndexedDB, and other WebKit website data. The active page is reloaded without cache after a successful clear so sign-out/storage changes are immediately visible.
+
+WebKit may group related subdomains under a parent domain, so the confirmation dialog identifies the current site before anything is removed. The existing **Clear Browsing Data…** command remains available for a full-profile website-data clear.
+
 ## Downloads
 
 Downloads use the same Tor-proxied `WebKitNetworkSession` as browsing. NiOn provides:
@@ -217,30 +245,12 @@ The preference is stored in the NiOn configuration directory.
 ├── PRIVACY.md
 ├── TOR_RUNTIME.md
 ├── APPIMAGE.md
-├── TESTING.md
 ├── UPGRADING.md
-├── CHANGELOG.md
 └── LICENSE
 ```
-
-## GitHub release
-
-The repository includes a release workflow. Pushing tag `v1.0.0` can build the x86_64 AppImage on GitHub Actions and attach the AppImage plus SHA-256 file to the GitHub release.
-
-Release notes are prepared in [GITHUB_RELEASE.md](GITHUB_RELEASE.md).
-
-## Project status
-
-**1.0.0 Stable** freezes the first public feature set. Future releases should prioritize bug fixes, compatibility, privacy/reliability work, and carefully scoped improvements rather than turning NiOn into a feature-heavy general-purpose browser.
 
 ## License
 
 NiOn source code is licensed under the **GNU General Public License v3.0 or later (GPL-3.0-or-later)**. See [LICENSE](LICENSE).
 
 NiOn bundles or interfaces with third-party software under their respective licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## Author
-
-**Jeannes Bryan**
-
-Repository: `https://github.com/jeannesbryan/nion`
