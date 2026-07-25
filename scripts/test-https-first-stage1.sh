@@ -7,9 +7,9 @@ fail=0
 pass() { printf 'PASS  %s\n' "$*"; }
 failmsg() { printf 'FAIL  %s\n' "$*" >&2; fail=1; }
 
-printf 'NiOn 1.1.0 Stage 1 HTTPS-First static checks\n\n'
+printf 'NiOn compatibility: HTTPS-First static checks\n\n'
 
-grep -q "version: '1.1.0'" meson.build && pass 'development version is 1.1.0' || failmsg 'Meson version mismatch'
+grep -Fq "version: files('release/manifest/NION_VERSION')" meson.build && pass 'Meson uses canonical release version' || failmsg 'Meson canonical version source missing'
 grep -q 'onion_host ? "http://" : "https://"' src/main.c && pass 'schemeless clearnet prefers HTTPS; onion prefers HTTP' || failmsg 'address resolution invariant missing'
 grep -q 'nion_uri_is_http_clearnet' src/main.c && pass 'plain HTTP clearnet detector present' || failmsg 'HTTP detector missing'
 grep -q 'Unencrypted clearnet connection' src/main.c && pass 'warning UI present' || failmsg 'warning UI missing'

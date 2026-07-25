@@ -89,6 +89,7 @@ Small NiOn-owned state files now have conservative size/format bounds:
 - saved session file: 16 MiB;
 - individual encoded tab session state: 8 MiB;
 - download history file: 4 MiB;
+- site zoom file: 1 MiB and at most 2048 remembered sites;
 - stored completed/failed/cancelled download history: newest 500 entries.
 
 Malformed files are renamed with `.corrupt-...` suffixes instead of silently deleted. URLs remain the fallback when opaque WebKit back/forward state cannot be restored.
@@ -152,6 +153,10 @@ The warning is intentionally not applied to `http://` Tor v3 `.onion` addresses.
 NiOn 1.1.0 Stage 2 stores bookmarks locally in `~/.local/share/nion/bookmarks.ini`. Bookmark titles and URLs are not synchronized or uploaded by NiOn. Opening a bookmark performs the same Tor-routed navigation as entering that URL normally.
 
 
+## Bookmark search (1.2.0 Stage 6)
+
+Bookmark search is local and in-memory. NiOn filters the already-loaded title and URL values from `bookmarks.ini`; it does not send search terms to a search engine, website, Tor service, or separate indexing process. The temporary query is not written to the profile and is cleared when the Bookmarks window is closed. Opening a matching bookmark still uses the normal Tor-gated WebKit navigation path.
+
 ## Per-site data clearing (1.1.0 Stage 3)
 
 **Clear Data for This Site…** does not run the global website-data clear. NiOn first asks WebKit for stored website-data records, selects records attributed to the active HTTP(S) host, and requests removal only for those matching records.
@@ -161,3 +166,17 @@ WebKit normally groups stored website data by domain/host name. For a subdomain,
 The operation can remove cookies and other persistent website state for the selected record, so it can sign the user out of that site. A confirmation dialog is always shown first. After a successful clear, the active page is reloaded without cache when it is still the current tab.
 
 The global **Clear Browsing Data…** command remains separate and clears website data across the whole NiOn profile.
+
+
+## Per-site zoom memory (1.2.0 Stage 3)
+
+NiOn stores non-default zoom preferences locally in `~/.config/nion/site-zoom.ini`. The file contains normalized host/site keys and zoom percentages, not page contents or full page paths. Because hostnames can still reveal which sites were visited or customized, this file should be treated as private browser-profile data. NiOn keeps it inside the mode-`0700` configuration directory and writes the file itself with mode `0600`.
+
+HTTP and HTTPS for the same hostname share a zoom preference; explicit non-default ports remain separate. Tor v3 `.onion` hostnames are supported. New Tab/Home and internal error pages do not create persistent zoom entries. `Ctrl+0` removes the active site's override rather than retaining a 100% record.
+
+## Download source history (1.2.0 Stage 5)
+
+NiOn's persistent download history in `~/.local/share/nion/downloads.ini` can now include the source request URI for a completed, failed, or cancelled download. This local value enables **Copy Download Link** and, for genuine failed HTTP(S) entries, **Retry Failed Download** after a restart. A source URI can contain path, query, or token information supplied by the remote site, so `downloads.ini` should be treated as private browser-profile data. **Clear Downloads** removes those stored history entries but does not delete completed files from the Downloads directory.
+
+Retry does not hand the remote URL to an external downloader. NiOn asks the active `WebKitWebView` to create a fresh download request only while bundled Tor is ready, so the retry remains on NiOn's configured WebKit network session. User-cancelled entries are not automatically retryable. **Open File** and **Open Containing Folder** are explicit local desktop actions and do not fetch the source URL.
+

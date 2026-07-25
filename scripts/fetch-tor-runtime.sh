@@ -2,13 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/scripts/manifest.sh"
 RUNTIME="$ROOT/runtime/tor"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/nion/tor-bundle"
 
-TOR_BROWSER_VERSION="15.0.19"
-TOR_DAEMON_VERSION="0.4.9.11"
-TOR_SIGNING_FPR="EF6E286DDA85EA2A4BA7DE684E2C6E8793298290"
-RUNTIME_LAYOUT="2"
+TOR_BROWSER_VERSION="$NION_TOR_BROWSER_VERSION"
+TOR_DAEMON_VERSION="$NION_TOR_DAEMON_VERSION"
+TOR_SIGNING_FPR="$NION_TOR_SIGNING_FPR"
+RUNTIME_LAYOUT="$NION_TOR_RUNTIME_LAYOUT"
 
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -19,6 +20,7 @@ case "$ARCH" in
     exit 2
     ;;
 esac
+[[ "$BUNDLE_ARCH" == "$NION_APPIMAGE_ARCH" ]] || { echo "Manifest AppImage architecture mismatch: $NION_APPIMAGE_ARCH" >&2; exit 2; }
 
 ARCHIVE="tor-expert-bundle-linux-${BUNDLE_ARCH}-${TOR_BROWSER_VERSION}.tar.gz"
 SIG="$ARCHIVE.asc"
@@ -43,7 +45,9 @@ chmod 700 "$CACHE"
 # instead of real shared libraries (for example libevent-2.1.so.7).
 if [[ -d "$RUNTIME/expert" && "${NION_FORCE_TOR_FETCH:-0}" != "1" ]]; then
   if "$ROOT/scripts/repair-tor-runtime.sh" >/dev/null 2>&1; then
-    if grep -qx "runtime-layout=$RUNTIME_LAYOUT" "$RUNTIME/MANIFEST.ini" 2>/dev/null; then
+    if grep -Fqx "runtime-layout=$RUNTIME_LAYOUT" "$RUNTIME/MANIFEST.ini" 2>/dev/null &&
+       grep -Fqx "tor-browser-version=$TOR_BROWSER_VERSION" "$RUNTIME/MANIFEST.ini" 2>/dev/null &&
+       grep -Fqx "tor-version=$TOR_DAEMON_VERSION" "$RUNTIME/MANIFEST.ini" 2>/dev/null; then
       current="$($RUNTIME/tor --version 2>/dev/null | head -n1 || true)"
       if [[ "$current" == *"$TOR_DAEMON_VERSION"* ]]; then
         echo "Bundled Tor runtime repaired/validated: $current"
@@ -55,7 +59,10 @@ fi
 
 if [[ -x "$RUNTIME/tor" && -f "$RUNTIME/MANIFEST.ini" && "${NION_FORCE_TOR_FETCH:-0}" != "1" ]]; then
   current="$($RUNTIME/tor --version 2>/dev/null | head -n1 || true)"
-  if [[ "$current" == *"$TOR_DAEMON_VERSION"* ]] && grep -qx "runtime-layout=$RUNTIME_LAYOUT" "$RUNTIME/MANIFEST.ini"; then
+  if [[ "$current" == *"$TOR_DAEMON_VERSION"* ]] &&
+     grep -Fqx "runtime-layout=$RUNTIME_LAYOUT" "$RUNTIME/MANIFEST.ini" &&
+     grep -Fqx "tor-browser-version=$TOR_BROWSER_VERSION" "$RUNTIME/MANIFEST.ini" &&
+     grep -Fqx "tor-version=$TOR_DAEMON_VERSION" "$RUNTIME/MANIFEST.ini"; then
     echo "Bundled Tor runtime already prepared: $current"
     exit 0
   fi

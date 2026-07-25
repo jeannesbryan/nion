@@ -1,4 +1,4 @@
-# NiOn 1.1.0 AppImage Engineering
+# NiOn 1.2.1 AppImage Engineering
 
 NiOn 1.0.0 finalizes the AppDir/AppImage packaging pipeline introduced in 0.9.0 and hardened through the 0.11.0 release candidate.
 
@@ -12,8 +12,8 @@ NiOn 1.0.0 finalizes the AppDir/AppImage packaging pipeline introduced in 0.9.0 
 Output:
 
 ```text
-dist/NiOn-1.1.0-x86_64.AppImage
-dist/NiOn-1.1.0-x86_64.AppImage.sha256
+dist/NiOn-1.2.1-x86_64.AppImage
+dist/NiOn-1.2.1-x86_64.AppImage.sha256
 ```
 
 The builder prepares the pinned, signature-verified Tor Expert Bundle when needed and fetches `appimagetool` when `APPIMAGETOOL` is not supplied.
@@ -99,7 +99,7 @@ The AppImage is read-only. NiOn state lives outside it:
 ~/.config/nion/
 ```
 
-Therefore replacing `NiOn-1.0.0-x86_64.AppImage` with another AppImage filename/version does not intentionally replace cookies, website data, downloads history, Tor state, or saved tabs.
+Therefore replacing an older AppImage with another NiOn AppImage filename/version does not intentionally replace cookies, website data, per-site zoom preferences, downloads history, Tor state, or saved tabs.
 
 Run:
 
@@ -115,7 +115,7 @@ Direct diagnostic:
 
 ```bash
 APPIMAGE_EXTRACT_AND_RUN=1 \
-./dist/NiOn-1.1.0-x86_64.AppImage \
+./dist/NiOn-1.2.1-x86_64.AppImage \
 --appimage-diagnose
 ```
 

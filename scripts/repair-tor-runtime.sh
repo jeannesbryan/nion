@@ -2,10 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/scripts/manifest.sh"
 RUNTIME="$ROOT/runtime/tor"
 EXPERT="$RUNTIME/expert"
-EXPECTED_TOR_VERSION="0.4.9.11"
-RUNTIME_LAYOUT="2"
+EXPECTED_TOR_VERSION="$NION_TOR_DAEMON_VERSION"
+RUNTIME_LAYOUT="$NION_TOR_RUNTIME_LAYOUT"
 
 if [[ ! -d "$EXPERT" ]]; then
   echo "NiOn Tor Expert Bundle is not present at: $EXPERT" >&2

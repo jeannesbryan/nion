@@ -1,7 +1,7 @@
 project(
   'nion',
   'c',
-  version: '1.1.0',
+  version: files('release/manifest/NION_VERSION'),
   meson_version: '>= 0.61.0',
   default_options: [
     'c_std=c17',
@@ -10,11 +10,20 @@ project(
   ],
 )
 
-gtk_dep = dependency('gtk4', version: '>= 4.10')
-webkit_dep = dependency('webkitgtk-6.0', version: '>= 2.40')
+fs = import('fs')
+gnome = import('gnome')
+
+release_status = fs.read('release/manifest/RELEASE_STATUS').strip()
+appstream_release_type = fs.read('release/manifest/APPSTREAM_RELEASE_TYPE').strip()
+tor_browser_version = fs.read('release/manifest/TOR_BROWSER_VERSION').strip()
+tor_daemon_version = fs.read('release/manifest/TOR_DAEMON_VERSION').strip()
+gtk_min_version = fs.read('release/manifest/GTK_MIN_VERSION').strip()
+webkitgtk_min_version = fs.read('release/manifest/WEBKITGTK_MIN_VERSION').strip()
+
+gtk_dep = dependency('gtk4', version: '>=' + gtk_min_version)
+webkit_dep = dependency('webkitgtk-6.0', version: '>=' + webkitgtk_min_version)
 gio_dep = dependency('gio-2.0')
 soup_dep = dependency('libsoup-3.0')
-gnome = import('gnome')
 
 nion_resources = gnome.compile_resources(
   'nion-resources',
@@ -25,7 +34,19 @@ nion_resources = gnome.compile_resources(
 
 conf = configuration_data()
 conf.set_quoted('NION_VERSION', meson.project_version())
+conf.set_quoted('NION_RELEASE_STATUS', release_status)
+conf.set_quoted('NION_TOR_BROWSER_BUNDLE_VERSION', tor_browser_version)
+conf.set_quoted('NION_TOR_DAEMON_VERSION', tor_daemon_version)
 configure_file(output: 'config.h', configuration: conf)
+
+metainfo_conf = configuration_data()
+metainfo_conf.set('NION_VERSION', meson.project_version())
+metainfo_conf.set('APPSTREAM_RELEASE_TYPE', appstream_release_type)
+nion_metainfo = configure_file(
+  input: 'data/io.github.jeannesbryan.Nion.metainfo.xml.in',
+  output: 'io.github.jeannesbryan.Nion.metainfo.xml',
+  configuration: metainfo_conf,
+)
 
 executable(
   'nion',
@@ -48,7 +69,7 @@ install_data(
 )
 
 install_data(
-  'data/io.github.jeannesbryan.Nion.metainfo.xml',
+  nion_metainfo,
   install_dir: get_option('datadir') / 'metainfo',
 )
 

@@ -2,23 +2,25 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/manifest.sh"
 
-VERSION="1.1.0"
+VERSION="$NION_VERSION"
 ARCH_RAW="$(uname -m)"
 case "$ARCH_RAW" in
   x86_64|amd64) ARCH=x86_64 ;;
   *) echo "NiOn $VERSION AppImage currently targets x86_64; got $ARCH_RAW" >&2; exit 2 ;;
 esac
+[[ "$ARCH" == "$NION_APPIMAGE_ARCH" ]] || { echo "Manifest expects $NION_APPIMAGE_ARCH AppImage; host resolved to $ARCH" >&2; exit 2; }
 
 for tool in meson pkg-config cc find ldd readelf cp; do
   command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 1; }
 done
-pkg-config --exists 'gtk4 >= 4.10' || { echo 'gtk4 >= 4.10 not found' >&2; exit 1; }
-pkg-config --exists 'webkitgtk-6.0 >= 2.40' || { echo 'webkitgtk-6.0 >= 2.40 not found' >&2; exit 1; }
+pkg-config --exists "gtk4 >= $NION_GTK_MIN_VERSION" || { echo "gtk4 >= $NION_GTK_MIN_VERSION not found" >&2; exit 1; }
+pkg-config --exists "webkitgtk-6.0 >= $NION_WEBKITGTK_MIN_VERSION" || { echo "webkitgtk-6.0 >= $NION_WEBKITGTK_MIN_VERSION not found" >&2; exit 1; }
 
-if [[ ! -x runtime/tor/tor ]]; then
-  ./scripts/fetch-tor-runtime.sh
-fi
+# Always ask the verified fetcher to validate the canonical Tor bundle pin.
+# It exits without downloading when runtime/tor already matches the manifest.
+./scripts/fetch-tor-runtime.sh
 # Normalize/validate the wrapper even when a runtime from an earlier NiOn
 # checkout already exists (notably the 0.6.0 pre-hotfix wrapper).
 ./scripts/repair-tor-runtime.sh
@@ -109,13 +111,14 @@ if [[ -n "$GIO_MODULE_DIR" && -d "$GIO_MODULE_DIR" ]]; then
   fi
 fi
 
-# AppStream metadata and root AppDir integration files.
-install -m644 data/io.github.jeannesbryan.Nion.metainfo.xml \
-  "$APPDIR/usr/share/metainfo/io.github.jeannesbryan.Nion.metainfo.xml"
+# AppStream metadata is generated from the canonical manifest by Meson and
+# already installed into the AppDir by `meson install`.
 mkdir -p "$APPDIR/usr/share/doc/nion" "$APPDIR/usr/share/licenses/nion"
 install -m644 LICENSE "$APPDIR/usr/share/licenses/nion/LICENSE"
 install -m644 THIRD_PARTY_NOTICES.md "$APPDIR/usr/share/doc/nion/THIRD_PARTY_NOTICES.md"
 install -m644 README.md "$APPDIR/usr/share/doc/nion/README.md"
+rm -rf "$APPDIR/usr/share/doc/nion/release-manifest"
+cp -a release/manifest "$APPDIR/usr/share/doc/nion/release-manifest"
 cp packaging/AppRun "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
 ln -sfn usr/share/applications/io.github.jeannesbryan.Nion.desktop \
@@ -130,6 +133,9 @@ ln -sfn usr/share/icons/hicolor/scalable/apps/io.github.jeannesbryan.Nion.svg \
   echo "NiOn=$VERSION"
   echo "Architecture=$ARCH"
   echo "BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "ReleaseStatus=$NION_RELEASE_STATUS"
+  echo "Tor=$NION_TOR_DAEMON_VERSION"
+  echo "TorBrowserExpertBundle=$NION_TOR_BROWSER_VERSION"
   echo "GTK=$(pkg-config --modversion gtk4)"
   echo "WebKitGTK=$(pkg-config --modversion webkitgtk-6.0)"
   echo "libsoup=$(pkg-config --modversion libsoup-3.0)"
@@ -156,7 +162,7 @@ if [[ -z "$APPIMAGETOOL" ]]; then
 fi
 [[ -x "$APPIMAGETOOL" ]] || { echo "appimagetool unavailable: $APPIMAGETOOL" >&2; exit 1; }
 
-OUT="$DIST/NiOn-${VERSION}-${ARCH}.AppImage"
+OUT="$DIST/$NION_APPIMAGE_BASENAME"
 rm -f "$OUT"
 # appimagetool itself can run without FUSE via APPIMAGE_EXTRACT_AND_RUN.
 ARCH="$ARCH" VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1 \

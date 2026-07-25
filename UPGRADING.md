@@ -32,6 +32,7 @@ When the profile is healthy, NiOn is designed to preserve:
 - cookies and website data;
 - website login sessions where the website itself continues accepting them;
 - preferences;
+- per-site zoom preferences;
 - saved tabs/session state;
 - download history;
 - Tor client state.
@@ -62,3 +63,13 @@ NiOn 1.0.0 uses session format 1 inherited from the 0.x series, so the 0.11.0 â†
 ## 1.1.x bookmark data
 
 NiOn 1.1.0 adds `~/.local/share/nion/bookmarks.ini`. It is additive and does not change the existing 1.0.0 cookie, session, download-history, or WebKit profile locations. Replacing the AppImage continues to reuse the same profile directory.
+
+
+## 1.2.x site zoom data
+
+NiOn 1.2.0 Stage 3 adds `~/.config/nion/site-zoom.ini`. It stores only bounded per-site zoom keys and percentages; it does not change the existing cookie, saved-session, bookmark, download-history, or WebKit profile formats. `Ctrl+0` removes the current site's stored override. Replacing the AppImage continues to reuse this configuration file.
+
+
+## NiOn 1.2.1
+
+1.2.1 is a release-engineering maintenance update. It does not intentionally change profile locations or persistent-data formats. The new `release/manifest/` exists in the source/AppImage documentation area and controls build/release metadata; it does not migrate user cookies, sessions, bookmarks, downloads, or per-site zoom data.

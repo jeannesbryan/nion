@@ -2,9 +2,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="1.1.0"
-OUTDIR="$ROOT/release"
-OUT="$OUTDIR/NiOn-${VERSION}-source.tar.gz"
+source "$ROOT/scripts/manifest.sh"
+VERSION="$NION_VERSION"
+OUTDIR="$ROOT/dist"
+OUT="$OUTDIR/$NION_SOURCE_BASENAME"
 mkdir -p "$OUTDIR"
 rm -f "$OUT" "$OUT.sha256"
 
@@ -20,7 +21,6 @@ else
     --exclude='./build-appimage' \
     --exclude='./NiOn.AppDir' \
     --exclude='./dist' \
-    --exclude='./release' \
     --exclude='./runtime/tor' \
     --exclude='./.tools' \
     -cf - . | tar -xf - -C "$STAGE/NiOn-${VERSION}"

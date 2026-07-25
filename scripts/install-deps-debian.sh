@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/scripts/manifest.sh"
 
 sudo apt update
 sudo apt install -y \
@@ -24,4 +26,4 @@ sudo apt install -y \
 
 echo "A system Tor package is not required by NiOn."
 echo "Run ./scripts/fetch-tor-runtime.sh to prepare the signed bundled Tor runtime."
-echo "Run ./scripts/build-appimage.sh for the 1.1.0 AppImage pipeline."
+echo "Run ./scripts/build-appimage.sh for the NiOn $NION_VERSION AppImage pipeline."

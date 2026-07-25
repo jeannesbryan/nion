@@ -2,13 +2,17 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/manifest.sh"
 
 NEED_RUNTIME=0
 if [[ ! -x runtime/tor/tor ]]; then
   NEED_RUNTIME=1
-elif [[ ! -f runtime/tor/MANIFEST.ini ]] || ! grep -qx 'runtime-layout=2' runtime/tor/MANIFEST.ini; then
+elif [[ ! -f runtime/tor/MANIFEST.ini ]] ||
+     ! grep -Fqx "runtime-layout=$NION_TOR_RUNTIME_LAYOUT" runtime/tor/MANIFEST.ini ||
+     ! grep -Fqx "tor-browser-version=$NION_TOR_BROWSER_VERSION" runtime/tor/MANIFEST.ini ||
+     ! grep -Fqx "tor-version=$NION_TOR_DAEMON_VERSION" runtime/tor/MANIFEST.ini; then
   NEED_RUNTIME=1
-elif ! runtime/tor/tor --version 2>/dev/null | head -n1 | grep -q '0\.4\.9\.11'; then
+elif ! runtime/tor/tor --version 2>/dev/null | head -n1 | grep -Fq "$NION_TOR_DAEMON_VERSION"; then
   NEED_RUNTIME=1
 fi
 

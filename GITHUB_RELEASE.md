@@ -1,29 +1,32 @@
-# NiOn 1.1.0 — Stable
+# NiOn 1.2.1 — Version & Dependency Manifest
 
-NiOn 1.1.0 keeps the browser intentionally small while improving everyday privacy and browsing controls.
+NiOn 1.2.1 is a maintenance release focused on release integrity rather than new browsing features.
 
-## Highlights
+## What changed
 
-- HTTPS-First behavior for clearnet navigation, with a warning before explicit plain-HTTP clearnet pages.
-- Simple local bookmarks with `Ctrl+D`, a toolbar bookmark toggle, and Open/Rename/Delete management.
-- **Clear Data for This Site…** to remove WebKit data for the current site without clearing unrelated sites.
-- Per-tab audio indicator and one-click mute/unmute.
-- Persistent profile remains compatible with NiOn 1.0.0.
-- Bundled Tor, fail-closed routing, Onion-Location, downloads, session restore, AppImage packaging, and existing privacy hardening remain intact.
+- Added centralized release/dependency values under `release/manifest/`.
+- Meson now reads the canonical NiOn version file directly.
+- About dialog NiOn/Tor/release status values are generated from the manifest.
+- AppStream release metadata is generated from a template instead of carrying a separately edited current version.
+- AppImage and source-archive filenames are derived from the manifest.
+- Bundled Tor fetch, validation, repair, and runtime metadata use the same Tor pins.
+- GitHub Actions now accepts `v*` release tags but rejects a tag that does not match the manifest version.
+- Release preflight includes a dedicated manifest drift test.
+- NiOn 1.2.0 Stage 1–6 browsing features and the persistent profile layout remain unchanged.
 
-## Assets
+## AppImage
+
+The canonical output name for this manifest is:
 
 ```text
-NiOn-1.1.0-x86_64.AppImage
-NiOn-1.1.0-x86_64.AppImage.sha256
+NiOn-1.2.1-x86_64.AppImage
+NiOn-1.2.1-x86_64.AppImage.sha256
 ```
 
-## Verify
+Verify and run:
 
 ```bash
-sha256sum -c NiOn-1.1.0-x86_64.AppImage.sha256
-chmod +x NiOn-1.1.0-x86_64.AppImage
-./NiOn-1.1.0-x86_64.AppImage
+sha256sum -c NiOn-1.2.1-x86_64.AppImage.sha256
+chmod +x NiOn-1.2.1-x86_64.AppImage
+./NiOn-1.2.1-x86_64.AppImage
 ```
-
-NiOn is not Tor Browser and does not claim Tor Browser-grade anti-fingerprinting or anonymity guarantees.

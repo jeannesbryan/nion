@@ -11,7 +11,7 @@ NiOn uses the Tor Expert Bundle as its bundled Tor runtime.
 - Project: Tor
 - Upstream: https://www.torproject.org/
 - Runtime source/download information: https://www.torproject.org/download/tor/
-- NiOn 1.0.0 pin: Tor Browser Expert Bundle 15.0.19 / Tor 0.4.9.11 for GNU/Linux x86_64
+- NiOn canonical runtime pin: see `release/manifest/TOR_BROWSER_VERSION`, `TOR_DAEMON_VERSION`, and `APPIMAGE_ARCH`. The exact values are also embedded into AppImage build provenance/runtime metadata.
 
 Tor and Tor Project trademarks remain the property of their respective owners.
 

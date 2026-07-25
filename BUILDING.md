@@ -1,8 +1,8 @@
-# Building NiOn 1.1.0
+# Building NiOn 1.2.1
 
 ## Supported production target
 
-The 1.1.0 production AppImage pipeline targets GNU/Linux x86_64.
+The 1.2.1 production AppImage pipeline targets GNU/Linux x86_64.
 
 ## Debian / Ubuntu dependencies
 
@@ -35,6 +35,18 @@ Binary:
 build/nion
 ```
 
+## Release manifest
+
+Before building, inspect the canonical values:
+
+```bash
+source ./scripts/manifest.sh
+printf 'NiOn %s\nTor %s / Expert Bundle %s\nOutput %s\n' \
+  "$NION_VERSION" "$NION_TOR_DAEMON_VERSION" "$NION_TOR_BROWSER_VERSION" "$NION_APPIMAGE_BASENAME"
+```
+
+Meson reads `release/manifest/NION_VERSION` directly and generates the C version macros plus AppStream metadata from the same manifest.
+
 ## Production AppImage
 
 ```bash
@@ -60,8 +72,8 @@ The builder:
 Expected output:
 
 ```text
-dist/NiOn-1.1.0-x86_64.AppImage
-dist/NiOn-1.1.0-x86_64.AppImage.sha256
+dist/NiOn-1.2.1-x86_64.AppImage
+dist/NiOn-1.2.1-x86_64.AppImage.sha256
 ```
 
 ## Validate
@@ -79,11 +91,11 @@ Then perform the live scenarios in `TESTING.md` and the runtime network audit:
 
 ## GitHub release build
 
-The repository includes `.github/workflows/release.yml`. For the 1.1.0 release:
+The repository includes `.github/workflows/release.yml`. For the 1.2.1 release:
 
 ```bash
-git tag -a v1.1.0 -m "NiOn 1.1.0"
-git push origin v1.1.0
+git tag -a v1.2.1 -m "NiOn 1.2.1"
+git push origin v1.2.1
 ```
 
-The workflow builds and validates the x86_64 AppImage and then creates/updates the corresponding GitHub release with the AppImage and SHA-256 asset.
+The workflow loads `release/manifest/`, rejects a tag that does not equal `v$NION_VERSION`, builds and validates the x86_64 AppImage, then creates/updates the corresponding GitHub release with the manifest-derived AppImage and SHA-256 asset.

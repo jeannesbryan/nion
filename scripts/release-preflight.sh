@@ -2,25 +2,34 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="1.1.0"
+source "$ROOT/scripts/manifest.sh"
+VERSION="$NION_VERSION"
 fail=0
 
 pass() { printf 'PASS  %s\n' "$*"; }
 warn() { printf 'WARN  %s\n' "$*"; }
 failmsg() { printf 'FAIL  %s\n' "$*" >&2; fail=1; }
 
-printf 'NiOn %s stable release preflight\n\n' "$VERSION"
+printf 'NiOn %s development/release preflight\n\n' "$VERSION"
 
-for tool in bash grep awk sed find stat sha256sum; do
+for tool in bash grep awk sed find stat sha256sum python3; do
   command -v "$tool" >/dev/null 2>&1 && pass "tool: $tool" || failmsg "missing tool: $tool"
 done
 
+printf '\n== Canonical release manifest ==\n'
+if ./scripts/test-manifest-1.2.1.sh >/dev/null; then
+  pass '1.2.1 version/dependency manifest static check'
+else
+  failmsg '1.2.1 version/dependency manifest static check failed'
+fi
+[[ "$VERSION" == "$(tr -d '\r\n' < release/manifest/NION_VERSION)" ]] && pass 'NiOn version loaded from manifest' || failmsg 'NiOn manifest version mismatch'
+[[ "$NION_APPIMAGE_BASENAME" == "NiOn-${VERSION}-${NION_APPIMAGE_ARCH}.AppImage" ]] && pass 'AppImage name derived from manifest' || failmsg 'AppImage name derivation mismatch'
+
 printf '\n== Release metadata ==\n'
-grep -q "version: '$VERSION'" meson.build && pass 'Meson version' || failmsg 'Meson version mismatch'
-grep -q "release version=\"$VERSION\"" data/io.github.jeannesbryan.Nion.metainfo.xml && pass 'AppStream version' || failmsg 'AppStream version mismatch'
-grep -q "VERSION=\"$VERSION\"" scripts/build-appimage.sh && pass 'AppImage builder version' || failmsg 'AppImage builder version mismatch'
-grep -Fq "Current release: $VERSION Stable" README.md && pass 'README version' || failmsg 'README version mismatch'
-grep -q '<project_license>GPL-3.0-or-later</project_license>' data/io.github.jeannesbryan.Nion.metainfo.xml && pass 'AppStream project license' || failmsg 'AppStream project license missing'
+grep -Fq "version: files('release/manifest/NION_VERSION')" meson.build && pass 'Meson reads canonical version file' || failmsg 'Meson version source mismatch'
+grep -Fq '@NION_VERSION@' data/io.github.jeannesbryan.Nion.metainfo.xml.in && pass 'AppStream version is generated' || failmsg 'AppStream version placeholder missing'
+grep -Fq "Current development: $VERSION" README.md && pass 'README version' || failmsg 'README version mismatch'
+grep -q '<project_license>GPL-3.0-or-later</project_license>' data/io.github.jeannesbryan.Nion.metainfo.xml.in && pass 'AppStream project license' || failmsg 'AppStream project license missing'
 [[ -s LICENSE ]] && pass 'LICENSE present' || failmsg 'LICENSE missing'
 [[ -s .gitignore ]] && pass '.gitignore present' || failmsg '.gitignore missing'
 [[ -s GITHUB_RELEASE.md ]] && pass 'GitHub release notes present' || failmsg 'GitHub release notes missing'
@@ -34,15 +43,20 @@ for script in scripts/*.sh packaging/AppRun; do
     failmsg "shell syntax: $script"
   fi
 done
-if python3 - <<'PY' >/dev/null 2>&1
+if python3 - "$VERSION" "$NION_APPSTREAM_RELEASE_TYPE" <<'PY' >/dev/null 2>&1
+import sys
 import xml.etree.ElementTree as ET
-ET.parse('data/io.github.jeannesbryan.Nion.metainfo.xml')
+from pathlib import Path
+version, release_type = sys.argv[1:]
+text = Path('data/io.github.jeannesbryan.Nion.metainfo.xml.in').read_text()
+text = text.replace('@NION_VERSION@', version).replace('@APPSTREAM_RELEASE_TYPE@', release_type)
+ET.fromstring(text)
 ET.parse('data/nion.gresource.xml')
 PY
 then
-  pass 'XML parses'
+  pass 'XML/templates parse'
 else
-  failmsg 'XML parse failed'
+  failmsg 'XML/template parse failed'
 fi
 
 printf '\n== Privacy/fail-closed invariants ==\n'
@@ -58,19 +72,34 @@ grep -q 'ClientRejectInternalAddresses 1' src/main.c && pass 'Tor internal-addre
 grep -q 'ClientDNSRejectInternalAddresses 1' src/main.c && pass 'Tor DNS internal-address rejection present' || failmsg 'Tor DNS internal-address rejection missing'
 grep -q 'webkit_settings_set_enable_webrtc(settings, FALSE)' src/main.c && pass 'WebRTC disabled' || failmsg 'WebRTC hardening missing'
 
-printf '\n== Profile resilience ==\n'
+printf '\n== Profile resilience / 1.2 regressions ==\n'
 grep -q 'nion_quarantine_profile_file' src/main.c && pass 'profile quarantine path present' || failmsg 'profile quarantine missing'
 grep -q 'NION_MAX_SESSION_FILE_BYTES' src/main.c && pass 'session size bound present' || failmsg 'session size bound missing'
 grep -q 'NION_MAX_DOWNLOAD_HISTORY 500' src/main.c && pass 'download history bound present' || failmsg 'download history bound missing'
 grep -q 'SQLite header' src/main.c && pass 'cookie SQLite sanity check present' || failmsg 'cookie DB sanity check missing'
+for test in \
+  scripts/test-zoom-stage3.sh \
+  scripts/test-site-info-stage4.sh \
+  scripts/test-downloads-stage5.sh \
+  scripts/test-bookmark-search-stage6.sh; do
+  if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
+done
 
 printf '\n== Bundled Tor ==\n'
 if [[ -x runtime/tor/tor ]]; then
   tor_version="$(runtime/tor/tor --version 2>&1 | head -n1 || true)"
-  if [[ "$tor_version" == *'0.4.9.11'* ]]; then
+  if [[ "$tor_version" == *"$NION_TOR_DAEMON_VERSION"* ]]; then
     pass "$tor_version"
   else
-    failmsg "unexpected bundled Tor: ${tor_version:-no output}"
+    failmsg "unexpected bundled Tor: ${tor_version:-no output}; manifest expects $NION_TOR_DAEMON_VERSION"
+  fi
+  if [[ -f runtime/tor/MANIFEST.ini ]] && \
+     grep -Fqx "tor-browser-version=$NION_TOR_BROWSER_VERSION" runtime/tor/MANIFEST.ini && \
+     grep -Fqx "tor-version=$NION_TOR_DAEMON_VERSION" runtime/tor/MANIFEST.ini && \
+     grep -Fqx "runtime-layout=$NION_TOR_RUNTIME_LAYOUT" runtime/tor/MANIFEST.ini; then
+    pass 'bundled Tor MANIFEST.ini matches canonical release manifest'
+  else
+    failmsg 'bundled Tor MANIFEST.ini does not match canonical release manifest'
   fi
 else
   warn 'Tor runtime not prepared yet; run ./scripts/fetch-tor-runtime.sh'
@@ -89,7 +118,7 @@ else
 fi
 
 printf '\n== AppImage ==\n'
-appimage="dist/NiOn-${VERSION}-x86_64.AppImage"
+appimage="dist/$NION_APPIMAGE_BASENAME"
 if [[ -x "$appimage" ]]; then
   if ./scripts/test-appimage.sh "$appimage"; then
     pass 'AppImage diagnostic/profile replacement test'
@@ -109,7 +138,7 @@ for dir in "${XDG_DATA_HOME:-$HOME/.local/share}/nion" \
     if [[ "$mode" == '700' ]]; then
       pass "$dir mode 700"
     else
-      warn "$dir mode is ${mode:-unknown}; NiOn 1.1.0 will attempt to normalize it to 700 on start"
+      warn "$dir mode is ${mode:-unknown}; NiOn $VERSION will attempt to normalize it to 700 on start"
     fi
   fi
 done

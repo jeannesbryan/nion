@@ -4,21 +4,17 @@ NiOn bundles and supervises its own Tor client runtime instead of assuming a sys
 
 ## Pinned upstream runtime
 
-The runtime preparation script pins:
+The runtime preparation script reads its canonical pins from `release/manifest/`. Inspect them with:
 
-```text
-Tor Browser Expert Bundle: 15.0.19
-Contained Tor daemon:       0.4.9.11
-Platform:                   GNU/Linux x86_64
+```bash
+source ./scripts/manifest.sh
+printf 'Tor Browser Expert Bundle: %s\nContained Tor daemon:       %s\nPlatform:                   GNU/Linux %s\n' \
+  "$NION_TOR_BROWSER_VERSION" "$NION_TOR_DAEMON_VERSION" "$NION_APPIMAGE_ARCH"
 ```
 
 `fetch-tor-runtime.sh` downloads the archive and detached signature, imports the Tor Browser Developers key into a temporary isolated GnuPG home, verifies the full expected fingerprint, then verifies the bundle signature before extraction.
 
-Expected signing fingerprint:
-
-```text
-EF6E286DDA85EA2A4BA7DE684E2C6E8793298290
-```
+The expected signing fingerprint is canonicalized in `release/manifest/TOR_SIGNING_FINGERPRINT` and consumed by the verified download script.
 
 ## Runtime selection
 
