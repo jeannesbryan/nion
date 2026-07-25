@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/src/main.c"
 README="$ROOT/README.md"
-ROADMAP="$ROOT/ROADMAP.md"
 CHANGELOG="$ROOT/CHANGELOG.md"
 PRIVACY="$ROOT/PRIVACY.md"
 
@@ -54,14 +53,12 @@ grep -q 'nion_validate_uri(uri, NULL)' "$SRC" \
   || fail "retry URL validation missing"
 pass "retry URL validation"
 
-grep -q 'Stage 5 stores the bounded source request URI' "$README" \
-  || fail "README Stage 5 documentation missing"
-grep -q 'Stage 5 — Download Improvements ✅' "$ROADMAP" \
-  || fail "ROADMAP does not mark Stage 5 complete"
+grep -q 'Copy Download Link' "$README" \
+  || fail "README download actions documentation missing"
 grep -q 'Stage 5: Download Improvements' "$CHANGELOG" \
   || fail "CHANGELOG Stage 5 entry missing"
-grep -q 'Download source history (1.2.0 Stage 5)' "$PRIVACY" \
-  || fail "PRIVACY Stage 5 source-URI disclosure missing"
-pass "Stage 5 documentation"
+grep -q '^## Download source history' "$PRIVACY" \
+  || fail "PRIVACY source-URI disclosure missing"
+pass "download documentation"
 
 echo "NION 1.2.0 STAGE 5 STATIC CHECK: PASS"

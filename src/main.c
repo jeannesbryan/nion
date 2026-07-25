@@ -59,13 +59,17 @@ struct _NionTab {
     WebKitWebView *web_view;
     GtkWidget *title_label;
     GtkWidget *favicon_picture;
+    GtkWidget *pin_indicator;
     GtkWidget *audio_button;
     GtkWidget *tab_label_box;
     GtkWidget *tab_menu_popover;
     GtkWidget *tab_menu_mute_button;
+    GtkWidget *tab_menu_pin_button;
     GtkWidget *tab_menu_close_others_button;
     GtkWidget *tab_menu_close_right_button;
+    GtkWidget *tab_close_button;
 
+    gboolean pinned;
     gboolean home_page;
     gboolean error_page;
     gboolean load_failed;
@@ -97,6 +101,7 @@ struct _NionBookmark {
 struct _NionClosedTab {
     gchar *uri;
     gboolean muted;
+    gboolean pinned;
 };
 
 struct _NionClearSiteRequest {
@@ -150,6 +155,10 @@ struct _NionApp {
 
     WebKitNetworkSession *network_session;
 
+    gboolean is_private;
+    NionApp *owner;
+    GPtrArray *private_windows;
+
     GSubprocess *tor_process;
     GDataInputStream *tor_output;
     guint16 tor_socks_port;
@@ -167,6 +176,8 @@ struct _NionApp {
     gboolean shutting_down;
     gboolean close_confirm_open;
     gboolean close_confirmed;
+    gboolean private_tab_close_confirm_open;
+    GtkWidget *private_tab_close_confirm_window;
     gchar *tor_last_log;
 
     gboolean restore_session;
@@ -175,6 +186,7 @@ struct _NionApp {
     gboolean previous_shutdown_clean;
     gboolean restored_previous_session;
     guint session_save_source_id;
+    gboolean normalizing_tab_order;
 
     gchar *data_dir;
     gchar *cache_dir;
@@ -219,6 +231,8 @@ struct _NionDownload {
 };
 
 static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select);
+static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean select,
+                                      WebKitWebView *related_view);
 static void nion_update_controls(NionApp *app);
 static void nion_load_home(NionTab *tab);
 static void nion_refresh_home_pages(NionApp *app);
@@ -234,7 +248,7 @@ static void nion_load_uri(NionTab *tab, const gchar *uri);
 static void nion_stop_all_web_activity(NionApp *app);
 static void nion_apply_privacy_settings(WebKitSettings *settings);
 static gboolean nion_start_tor(NionApp *app);
-static void nion_prepare_network(NionApp *app);
+static gboolean nion_prepare_network(NionApp *app);
 static void nion_apply_network_proxy(NionApp *app);
 static void nion_store_tor_log(NionApp *app, const gchar *line);
 static void nion_update_onion_button(NionApp *app);
@@ -253,14 +267,17 @@ static void nion_toggle_current_bookmark(NionApp *app);
 static void nion_update_tab_audio_button(NionTab *tab);
 static void nion_reopen_closed_tab(NionApp *app);
 static void nion_update_tab_context_menu(NionTab *tab);
+static void nion_set_tab_pinned(NionTab *tab, gboolean pinned, gboolean schedule_save);
 static void nion_tab_context_popdown(NionTab *tab);
 static void nion_print_tab(NionTab *tab);
 static gboolean on_webview_context_menu(WebKitWebView *web_view,
                                         WebKitContextMenu *context_menu,
-                                        GdkEvent *event,
                                         WebKitHitTestResult *hit_test_result,
                                         gpointer user_data);
 static void nion_request_close(NionApp *app);
+static void nion_build_ui(NionApp *app);
+static void nion_open_private_window(NionApp *app);
+static void nion_sync_private_windows_tor(NionApp *app);
 static void nion_find_open(NionApp *app);
 static void nion_find_close(NionApp *app);
 static void nion_find_run(NionApp *app);
@@ -501,6 +518,9 @@ static void nion_load_preferences(NionApp *app)
 
 static void nion_save_preferences(NionApp *app)
 {
+    if (!app || app->is_private || !app->preferences_file)
+        return;
+
     GKeyFile *key_file = g_key_file_new();
     g_key_file_set_boolean(key_file, "General", "restore-session", app->restore_session);
     g_key_file_set_boolean(key_file, "Privacy", "block-third-party-cookies", app->block_third_party_cookies);
@@ -560,7 +580,7 @@ static gchar *nion_site_zoom_key_for_uri(const gchar *uri)
 
 static void nion_save_site_zoom(NionApp *app)
 {
-    if (!app || !app->site_zoom_file || !app->site_zoom)
+    if (!app || app->is_private || !app->site_zoom_file || !app->site_zoom)
         return;
 
     GKeyFile *key_file = g_key_file_new();
@@ -673,7 +693,7 @@ static void nion_load_site_zoom(NionApp *app)
 
 static gboolean nion_remember_site_zoom(NionApp *app, const gchar *key, gint percent)
 {
-    if (!app || !app->site_zoom || !key || !*key)
+    if (!app || app->is_private || !app->site_zoom || !key || !*key)
         return FALSE;
 
     percent = CLAMP(percent, NION_ZOOM_MIN_PERCENT, NION_ZOOM_MAX_PERCENT);
@@ -701,7 +721,7 @@ static void nion_apply_site_zoom(NionTab *tab, const gchar *uri)
     gint percent = NION_ZOOM_DEFAULT_PERCENT;
     if (!tab->home_page && !tab->error_page) {
         gchar *key = nion_site_zoom_key_for_uri(uri);
-        if (key && tab->app && tab->app->site_zoom) {
+        if (key && tab->app && !tab->app->is_private && tab->app->site_zoom) {
             gpointer stored = g_hash_table_lookup(tab->app->site_zoom, key);
             if (stored)
                 percent = GPOINTER_TO_INT(stored);
@@ -727,6 +747,8 @@ static void nion_apply_cookie_policy(NionApp *app)
 
 static void nion_save_session(NionApp *app, gboolean clean_shutdown)
 {
+    if (!app || app->is_private)
+        return;
     if (!app->session_file)
         return;
 
@@ -767,6 +789,7 @@ static void nion_save_session(NionApp *app, gboolean clean_shutdown)
         g_key_file_set_boolean(session, group, "home", tab->home_page);
         g_key_file_set_boolean(session, group, "muted",
                                webkit_web_view_get_is_muted(tab->web_view));
+        g_key_file_set_boolean(session, group, "pinned", tab->pinned);
 
         const gchar *uri = tab->display_uri_override;
         if (!uri || !*uri)
@@ -817,6 +840,8 @@ static gboolean nion_session_save_timeout(gpointer user_data)
 
 static void nion_schedule_session_save(NionApp *app)
 {
+    if (!app || app->is_private)
+        return;
     if (!app->restore_session || app->shutting_down || !app->notebook)
         return;
 
@@ -853,6 +878,8 @@ static gboolean nion_restore_tab_state(NionTab *tab, const gchar *base64)
 
 static gboolean nion_restore_saved_session(NionApp *app)
 {
+    if (!app || app->is_private)
+        return FALSE;
     if (!app->restore_session || !g_file_test(app->session_file, G_FILE_TEST_IS_REGULAR))
         return FALSE;
 
@@ -901,6 +928,9 @@ static gboolean nion_restore_saved_session(NionApp *app)
         gboolean muted = g_key_file_has_key(session, group, "muted", NULL)
             ? g_key_file_get_boolean(session, group, "muted", NULL)
             : FALSE;
+        gboolean pinned = g_key_file_has_key(session, group, "pinned", NULL)
+            ? g_key_file_get_boolean(session, group, "pinned", NULL)
+            : FALSE;
         gchar *uri = g_key_file_get_string(session, group, "uri", NULL);
         gchar *state = g_key_file_get_string(session, group, "state", NULL);
 
@@ -918,21 +948,25 @@ static gboolean nion_restore_saved_session(NionApp *app)
         if (state && *state && !state_valid)
             g_warning("Ignoring malformed WebKit session state in %s", group);
 
+        NionTab *restored_tab = NULL;
         if (home || ((!uri || !*uri) && !state_valid)) {
-            nion_new_tab(app, NULL, FALSE);
-            restored++;
+            restored_tab = nion_new_tab(app, NULL, FALSE);
         } else {
-            NionTab *tab = nion_new_tab(app, "", FALSE);
-            if (tab) {
-                tab->home_page = FALSE;
-                tab->error_page = FALSE;
-                tab->restore_pending = TRUE;
-                tab->restore_uri = g_strdup(uri);
-                webkit_web_view_set_is_muted(tab->web_view, muted);
+            restored_tab = nion_new_tab(app, "", FALSE);
+            if (restored_tab) {
+                restored_tab->home_page = FALSE;
+                restored_tab->error_page = FALSE;
+                restored_tab->restore_pending = TRUE;
+                restored_tab->restore_uri = g_strdup(uri);
                 if (state_valid)
-                    nion_restore_tab_state(tab, state);
-                restored++;
+                    nion_restore_tab_state(restored_tab, state);
             }
+        }
+
+        if (restored_tab) {
+            webkit_web_view_set_is_muted(restored_tab->web_view, muted);
+            nion_set_tab_pinned(restored_tab, pinned, FALSE);
+            restored++;
         }
 
         g_free(state);
@@ -1565,9 +1599,9 @@ static gchar *nion_home_html(NionApp *app)
         state = g_strdup("Tor connected");
         state_class = "connected";
         state_glyph = "●";
-        detail = g_strdup(
-            "Open a clearnet website, a Tor v3 .onion address, or type a search query. "
-            "NiOn routes browsing through Tor.");
+        detail = app->is_private
+            ? g_strdup("Private browsing is active. Website data is ephemeral and is discarded when this private window closes. NiOn still routes browsing through Tor.")
+            : g_strdup("Open a clearnet website, a Tor v3 .onion address, or type a search query. NiOn routes browsing through Tor.");
     } else if (app->tor_failed) {
         state = g_strdup("Tor unavailable");
         state_class = "error";
@@ -1774,6 +1808,7 @@ static void nion_set_tor_ready(NionApp *app, gboolean ready)
     if (ready)
         nion_start_pending_restores(app);
     nion_update_controls(app);
+    nion_sync_private_windows_tor(app);
 }
 
 static void nion_set_tor_progress(NionApp *app, gint percent)
@@ -1798,6 +1833,7 @@ static void nion_set_tor_progress(NionApp *app, gint percent)
 
     nion_refresh_home_pages(app);
     nion_update_controls(app);
+    nion_sync_private_windows_tor(app);
 }
 
 
@@ -1840,6 +1876,7 @@ static void nion_set_tor_error(NionApp *app, const gchar *message)
     nion_cancel_active_downloads(app);
     nion_refresh_home_pages(app);
     nion_update_controls(app);
+    nion_sync_private_windows_tor(app);
 }
 
 static void nion_load_uri(NionTab *tab, const gchar *uri)
@@ -2002,6 +2039,7 @@ static void nion_remember_closed_tab(NionTab *tab)
     NionClosedTab *closed = g_new0(NionClosedTab, 1);
     closed->uri = g_strdup(uri);
     closed->muted = webkit_web_view_get_is_muted(tab->web_view);
+    closed->pinned = tab->pinned;
     g_queue_push_tail(app->closed_tabs, closed);
 
     while (g_queue_get_length(app->closed_tabs) > NION_MAX_CLOSED_TABS)
@@ -2037,15 +2075,33 @@ static void nion_reopen_closed_tab(NionApp *app)
     }
 
     NionTab *tab = nion_new_tab(app, closed->uri, TRUE);
-    if (tab && closed->muted)
-        webkit_web_view_set_is_muted(tab->web_view, TRUE);
+    if (tab) {
+        if (closed->muted)
+            webkit_web_view_set_is_muted(tab->web_view, TRUE);
+        nion_set_tab_pinned(tab, closed->pinned, TRUE);
+    }
 
     nion_set_status(app, "● TOR CONNECTED — REOPENED CLOSED TAB");
     nion_closed_tab_free(closed);
 }
 
-static void nion_close_tab(NionTab *tab)
+typedef enum {
+    NION_PRIVATE_CLOSE_SINGLE,
+    NION_PRIVATE_CLOSE_OTHERS,
+    NION_PRIVATE_CLOSE_RIGHT
+} NionPrivateCloseMode;
+
+typedef struct {
+    NionApp *app;
+    NionTab *anchor;
+    NionPrivateCloseMode mode;
+} NionPrivateCloseRequest;
+
+static void nion_close_tab_now(NionTab *tab)
 {
+    if (!tab || !tab->app || !tab->app->notebook)
+        return;
+
     NionApp *app = tab->app;
     gint page_num = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), tab->page);
     if (page_num < 0)
@@ -2066,6 +2122,186 @@ static void nion_close_tab(NionTab *tab)
     gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page_num);
     nion_update_controls(app);
     nion_schedule_session_save(app);
+}
+
+static guint nion_private_close_target_count(NionPrivateCloseRequest *request)
+{
+    if (!request || !request->app || !request->app->notebook || !request->anchor)
+        return 0;
+    if (request->mode == NION_PRIVATE_CLOSE_SINGLE)
+        return gtk_notebook_page_num(GTK_NOTEBOOK(request->app->notebook), request->anchor->page) >= 0 ? 1u : 0u;
+
+    GtkNotebook *notebook = GTK_NOTEBOOK(request->app->notebook);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    gint anchor_index = gtk_notebook_page_num(notebook, request->anchor->page);
+    guint count = 0;
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (!tab || tab == request->anchor || tab->pinned)
+            continue;
+        if (request->mode == NION_PRIVATE_CLOSE_RIGHT && (anchor_index < 0 || i <= anchor_index))
+            continue;
+        count++;
+    }
+    return count;
+}
+
+static void nion_private_apply_close_request(NionPrivateCloseRequest *request)
+{
+    if (!request || !request->app || !request->anchor)
+        return;
+
+    NionApp *app = request->app;
+    if (request->mode == NION_PRIVATE_CLOSE_SINGLE) {
+        nion_close_tab_now(request->anchor);
+        return;
+    }
+
+    GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
+    gint anchor_index = gtk_notebook_page_num(notebook, request->anchor->page);
+    for (gint i = gtk_notebook_get_n_pages(notebook) - 1; i >= 0; i--) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        if (!page || page == request->anchor->page)
+            continue;
+        NionTab *other = g_object_get_data(G_OBJECT(page), "nion-tab");
+        if (!other || other->pinned)
+            continue;
+        if (request->mode == NION_PRIVATE_CLOSE_RIGHT && (anchor_index < 0 || i <= anchor_index))
+            continue;
+        nion_close_tab_now(other);
+    }
+
+    gint current = gtk_notebook_page_num(notebook, request->anchor->page);
+    if (current >= 0)
+        gtk_notebook_set_current_page(notebook, current);
+    nion_update_controls(app);
+}
+
+static gboolean on_private_tab_close_confirm_request(GtkWindow *window, gpointer user_data)
+{
+    (void)window;
+    NionPrivateCloseRequest *request = user_data;
+    if (request && request->app) {
+        request->app->private_tab_close_confirm_open = FALSE;
+        request->app->private_tab_close_confirm_window = NULL;
+    }
+    return FALSE;
+}
+
+static void on_private_tab_close_no(GtkButton *button, gpointer user_data)
+{
+    NionPrivateCloseRequest *request = user_data;
+    if (request && request->app) {
+        request->app->private_tab_close_confirm_open = FALSE;
+        request->app->private_tab_close_confirm_window = NULL;
+    }
+    GtkRoot *root = gtk_widget_get_root(GTK_WIDGET(button));
+    if (root && GTK_IS_WINDOW(root))
+        gtk_window_destroy(GTK_WINDOW(root));
+}
+
+static void on_private_tab_close_yes(GtkButton *button, gpointer user_data)
+{
+    NionPrivateCloseRequest *request = user_data;
+    GtkRoot *root = gtk_widget_get_root(GTK_WIDGET(button));
+    if (request && request->app) {
+        request->app->private_tab_close_confirm_open = FALSE;
+        request->app->private_tab_close_confirm_window = NULL;
+    }
+    nion_private_apply_close_request(request);
+    if (root && GTK_IS_WINDOW(root))
+        gtk_window_destroy(GTK_WINDOW(root));
+}
+
+static void nion_request_private_tab_close(NionTab *tab, NionPrivateCloseMode mode)
+{
+    if (!tab || !tab->app || !tab->app->is_private)
+        return;
+    NionApp *app = tab->app;
+    if (app->private_tab_close_confirm_open)
+        return;
+
+    NionPrivateCloseRequest *request = g_new0(NionPrivateCloseRequest, 1);
+    request->app = app;
+    request->anchor = tab;
+    request->mode = mode;
+    guint count = nion_private_close_target_count(request);
+    if (count == 0) {
+        g_free(request);
+        return;
+    }
+
+    app->private_tab_close_confirm_open = TRUE;
+    GtkWidget *window = gtk_window_new();
+    app->private_tab_close_confirm_window = window;
+    gtk_window_set_title(GTK_WINDOW(window), "Close private tab?");
+    gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(app->window));
+    gtk_window_set_modal(GTK_WINDOW(window), TRUE);
+    gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
+    gtk_window_set_default_size(GTK_WINDOW(window), 430, -1);
+    g_object_set_data_full(G_OBJECT(window), "nion-private-close-request", request, g_free);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    gtk_widget_set_margin_top(box, 20);
+    gtk_widget_set_margin_bottom(box, 20);
+    gtk_widget_set_margin_start(box, 20);
+    gtk_widget_set_margin_end(box, 20);
+    gtk_window_set_child(GTK_WINDOW(window), box);
+
+    GtkWidget *heading = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(heading),
+                         mode == NION_PRIVATE_CLOSE_SINGLE
+                            ? "<b>Close this private tab?</b>"
+                            : "<b>Close private tabs?</b>");
+    gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
+    gtk_box_append(GTK_BOX(box), heading);
+
+    gchar *message_text = NULL;
+    if (mode == NION_PRIVATE_CLOSE_SINGLE)
+        message_text = g_strdup("This tab will be closed.");
+    else
+        message_text = g_strdup_printf(count == 1
+            ? "1 private tab will be closed."
+            : "%u private tabs will be closed.", count);
+    GtkWidget *message = gtk_label_new(message_text);
+    g_free(message_text);
+    gtk_label_set_wrap(GTK_LABEL(message), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(message), 0.0f);
+    gtk_box_append(GTK_BOX(box), message);
+
+    GtkWidget *note = gtk_label_new(
+        "Private website data is discarded when the entire Private Window closes, not merely when one tab closes.");
+    gtk_label_set_wrap(GTK_LABEL(note), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(note), 0.0f);
+    gtk_widget_add_css_class(note, "nion-muted");
+    gtk_box_append(GTK_BOX(box), note);
+
+    GtkWidget *buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_halign(buttons, GTK_ALIGN_END);
+    GtkWidget *no = gtk_button_new_with_label("No");
+    GtkWidget *yes = gtk_button_new_with_label("Yes");
+    gtk_widget_add_css_class(yes, "destructive-action");
+    gtk_box_append(GTK_BOX(buttons), no);
+    gtk_box_append(GTK_BOX(buttons), yes);
+    gtk_box_append(GTK_BOX(box), buttons);
+
+    g_signal_connect(no, "clicked", G_CALLBACK(on_private_tab_close_no), request);
+    g_signal_connect(yes, "clicked", G_CALLBACK(on_private_tab_close_yes), request);
+    g_signal_connect(window, "close-request",
+                     G_CALLBACK(on_private_tab_close_confirm_request), request);
+    gtk_window_present(GTK_WINDOW(window));
+}
+
+static void nion_close_tab(NionTab *tab)
+{
+    if (!tab || !tab->app)
+        return;
+    if (tab->app->is_private) {
+        nion_request_private_tab_close(tab, NION_PRIVATE_CLOSE_SINGLE);
+        return;
+    }
+    nion_close_tab_now(tab);
 }
 
 static void on_tab_close_clicked(GtkButton *button, gpointer user_data)
@@ -2093,6 +2329,105 @@ static void nion_tab_free(gpointer data)
     g_clear_pointer(&tab->http_allowed_origin, g_free);
     g_clear_pointer(&tab->restore_uri, g_free);
     g_free(tab);
+}
+
+static gint nion_count_pinned_tabs(NionApp *app)
+{
+    if (!app || !app->notebook)
+        return 0;
+
+    GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    gint pinned = 0;
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (tab && tab->pinned)
+            pinned++;
+    }
+    return pinned;
+}
+
+static void nion_update_tab_pinned_ui(NionTab *tab)
+{
+    if (!tab)
+        return;
+
+    if (tab->tab_close_button)
+        gtk_widget_set_visible(tab->tab_close_button, !tab->pinned);
+    if (tab->pin_indicator)
+        gtk_widget_set_visible(tab->pin_indicator, tab->pinned);
+
+    if (tab->tab_label_box) {
+        if (tab->pinned)
+            gtk_widget_add_css_class(tab->tab_label_box, "nion-tab-pinned");
+        else
+            gtk_widget_remove_css_class(tab->tab_label_box, "nion-tab-pinned");
+        gtk_widget_set_tooltip_text(tab->tab_label_box,
+                                    tab->pinned ? "Pinned tab" : NULL);
+    }
+}
+
+static void nion_set_tab_pinned(NionTab *tab, gboolean pinned, gboolean schedule_save)
+{
+    if (!tab || !tab->app || !tab->app->notebook)
+        return;
+
+    NionApp *app = tab->app;
+    GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
+    if (tab->pinned == pinned) {
+        nion_update_tab_pinned_ui(tab);
+        nion_update_tab_context_menu(tab);
+        if (schedule_save)
+            nion_schedule_session_save(app);
+        return;
+    }
+
+    tab->pinned = pinned;
+    gint pinned_count = nion_count_pinned_tabs(app);
+    gint target = pinned ? MAX(pinned_count - 1, 0) : pinned_count;
+    gint current = gtk_notebook_page_num(notebook, tab->page);
+    if (current >= 0 && current != target) {
+        app->normalizing_tab_order = TRUE;
+        gtk_notebook_reorder_child(notebook, tab->page, target);
+        app->normalizing_tab_order = FALSE;
+    }
+
+    nion_update_tab_pinned_ui(tab);
+    nion_update_tab_context_menu(tab);
+    if (schedule_save)
+        nion_schedule_session_save(app);
+}
+
+static gboolean nion_has_unpinned_tab_other_than(NionTab *tab)
+{
+    if (!tab || !tab->app || !tab->app->notebook)
+        return FALSE;
+    GtkNotebook *notebook = GTK_NOTEBOOK(tab->app->notebook);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *other = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (other && other != tab && !other->pinned)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static gboolean nion_has_unpinned_tab_to_right(NionTab *tab)
+{
+    if (!tab || !tab->app || !tab->app->notebook)
+        return FALSE;
+    GtkNotebook *notebook = GTK_NOTEBOOK(tab->app->notebook);
+    gint index = gtk_notebook_page_num(notebook, tab->page);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    for (gint i = index + 1; index >= 0 && i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *other = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (other && !other->pinned)
+            return TRUE;
+    }
+    return FALSE;
 }
 
 static void nion_update_tab_audio_button(NionTab *tab)
@@ -2191,6 +2526,16 @@ static void on_tab_context_mute_clicked(GtkButton *button, gpointer user_data)
     nion_schedule_session_save(tab->app);
 }
 
+static void on_tab_context_pin_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    NionTab *tab = user_data;
+    if (!tab)
+        return;
+    nion_tab_context_popdown(tab);
+    nion_set_tab_pinned(tab, !tab->pinned, TRUE);
+}
+
 static void on_tab_context_close_clicked(GtkButton *button, gpointer user_data)
 {
     (void)button;
@@ -2204,6 +2549,10 @@ static void on_tab_context_close_others_clicked(GtkButton *button, gpointer user
     if (!tab || !tab->app)
         return;
     nion_tab_context_popdown(tab);
+    if (tab->app->is_private) {
+        nion_request_private_tab_close(tab, NION_PRIVATE_CLOSE_OTHERS);
+        return;
+    }
 
     GtkNotebook *notebook = GTK_NOTEBOOK(tab->app->notebook);
     for (gint i = gtk_notebook_get_n_pages(notebook) - 1; i >= 0; i--) {
@@ -2211,7 +2560,7 @@ static void on_tab_context_close_others_clicked(GtkButton *button, gpointer user
         if (!page || page == tab->page)
             continue;
         NionTab *other = g_object_get_data(G_OBJECT(page), "nion-tab");
-        if (other)
+        if (other && !other->pinned)
             nion_close_tab(other);
     }
 
@@ -2226,6 +2575,10 @@ static void on_tab_context_close_right_clicked(GtkButton *button, gpointer user_
     if (!tab || !tab->app)
         return;
     nion_tab_context_popdown(tab);
+    if (tab->app->is_private) {
+        nion_request_private_tab_close(tab, NION_PRIVATE_CLOSE_RIGHT);
+        return;
+    }
 
     GtkNotebook *notebook = GTK_NOTEBOOK(tab->app->notebook);
     gint tab_index = gtk_notebook_page_num(notebook, tab->page);
@@ -2235,7 +2588,7 @@ static void on_tab_context_close_right_clicked(GtkButton *button, gpointer user_
     for (gint i = gtk_notebook_get_n_pages(notebook) - 1; i > tab_index; i--) {
         GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
         NionTab *other = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
-        if (other)
+        if (other && !other->pinned)
             nion_close_tab(other);
     }
 
@@ -2263,15 +2616,16 @@ static void nion_update_tab_context_menu(NionTab *tab)
                              webkit_web_view_get_is_muted(tab->web_view)
                                 ? "Unmute Tab" : "Mute Tab");
     }
+    if (tab->tab_menu_pin_button)
+        gtk_button_set_label(GTK_BUTTON(tab->tab_menu_pin_button),
+                             tab->pinned ? "Unpin Tab" : "Pin Tab");
 
-    GtkNotebook *notebook = GTK_NOTEBOOK(tab->app->notebook);
-    gint pages = gtk_notebook_get_n_pages(notebook);
-    gint index = gtk_notebook_page_num(notebook, tab->page);
     if (tab->tab_menu_close_others_button)
-        gtk_widget_set_sensitive(tab->tab_menu_close_others_button, pages > 1);
+        gtk_widget_set_sensitive(tab->tab_menu_close_others_button,
+                                 nion_has_unpinned_tab_other_than(tab));
     if (tab->tab_menu_close_right_button)
         gtk_widget_set_sensitive(tab->tab_menu_close_right_button,
-                                 index >= 0 && index < pages - 1);
+                                 nion_has_unpinned_tab_to_right(tab));
 }
 
 static GtkWidget *nion_create_tab_context_menu(NionTab *tab)
@@ -2285,6 +2639,7 @@ static GtkWidget *nion_create_tab_context_menu(NionTab *tab)
 
     GtkWidget *reload = nion_tab_menu_button("Reload", G_CALLBACK(on_tab_context_reload_clicked), tab);
     GtkWidget *duplicate = nion_tab_menu_button("Duplicate Tab", G_CALLBACK(on_tab_context_duplicate_clicked), tab);
+    GtkWidget *pin = nion_tab_menu_button("Pin Tab", G_CALLBACK(on_tab_context_pin_clicked), tab);
     GtkWidget *mute = nion_tab_menu_button("Mute Tab", G_CALLBACK(on_tab_context_mute_clicked), tab);
     GtkWidget *close = nion_tab_menu_button("Close Tab", G_CALLBACK(on_tab_context_close_clicked), tab);
     GtkWidget *close_others = nion_tab_menu_button("Close Other Tabs", G_CALLBACK(on_tab_context_close_others_clicked), tab);
@@ -2292,6 +2647,7 @@ static GtkWidget *nion_create_tab_context_menu(NionTab *tab)
 
     gtk_box_append(GTK_BOX(box), reload);
     gtk_box_append(GTK_BOX(box), duplicate);
+    gtk_box_append(GTK_BOX(box), pin);
     gtk_box_append(GTK_BOX(box), mute);
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     gtk_box_append(GTK_BOX(box), close);
@@ -2301,6 +2657,7 @@ static GtkWidget *nion_create_tab_context_menu(NionTab *tab)
 
     tab->tab_menu_popover = popover;
     tab->tab_menu_mute_button = mute;
+    tab->tab_menu_pin_button = pin;
     tab->tab_menu_close_others_button = close_others;
     tab->tab_menu_close_right_button = close_right;
     return popover;
@@ -2329,6 +2686,7 @@ static GtkWidget *nion_make_tab_label(NionTab *tab)
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_widget_add_css_class(box, "nion-tab-label");
     GtkWidget *favicon = gtk_picture_new();
+    GtkWidget *pin = gtk_label_new("📌");
     GtkWidget *label = gtk_label_new("New Tab");
     GtkWidget *audio = gtk_button_new_from_icon_name("audio-volume-high-symbolic");
     GtkWidget *close = gtk_button_new_from_icon_name("window-close-symbolic");
@@ -2337,6 +2695,9 @@ static GtkWidget *nion_make_tab_label(NionTab *tab)
     gtk_picture_set_can_shrink(GTK_PICTURE(favicon), TRUE);
     gtk_picture_set_content_fit(GTK_PICTURE(favicon), GTK_CONTENT_FIT_CONTAIN);
     gtk_widget_set_visible(favicon, FALSE);
+    gtk_widget_add_css_class(pin, "nion-tab-pin");
+    gtk_widget_set_tooltip_text(pin, "Pinned tab");
+    gtk_widget_set_visible(pin, FALSE);
 
     gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
     gtk_label_set_width_chars(GTK_LABEL(label), 14);
@@ -2353,14 +2714,18 @@ static GtkWidget *nion_make_tab_label(NionTab *tab)
     gtk_widget_add_css_class(close, "nion-tab-close");
 
     gtk_box_append(GTK_BOX(box), favicon);
+    gtk_box_append(GTK_BOX(box), pin);
     gtk_box_append(GTK_BOX(box), label);
     gtk_box_append(GTK_BOX(box), audio);
     gtk_box_append(GTK_BOX(box), close);
 
     tab->title_label = label;
     tab->favicon_picture = favicon;
+    tab->pin_indicator = pin;
     tab->audio_button = audio;
     tab->tab_label_box = box;
+    tab->tab_close_button = close;
+    nion_update_tab_pinned_ui(tab);
     g_signal_connect(audio, "clicked", G_CALLBACK(on_tab_audio_clicked), tab);
     g_signal_connect(close, "clicked", G_CALLBACK(on_tab_close_clicked), tab);
 
@@ -2377,7 +2742,7 @@ static GtkWidget *nion_make_tab_label(NionTab *tab)
 static void nion_update_window_title(NionApp *app, NionTab *tab)
 {
     if (!tab) {
-        gtk_window_set_title(GTK_WINDOW(app->window), "NiOn");
+        gtk_window_set_title(GTK_WINDOW(app->window), app->is_private ? "NiOn — Private" : "NiOn");
         return;
     }
 
@@ -2389,9 +2754,9 @@ static void nion_update_window_title(NionApp *app, NionTab *tab)
     }
 
     if (g_str_equal(title, "NiOn")) {
-        gtk_window_set_title(GTK_WINDOW(app->window), "NiOn");
+        gtk_window_set_title(GTK_WINDOW(app->window), app->is_private ? "NiOn — Private" : "NiOn");
     } else {
-        gchar *window_title = g_strdup_printf("%s — NiOn", title);
+        gchar *window_title = g_strdup_printf(app->is_private ? "%s — NiOn Private" : "%s — NiOn", title);
         gtk_window_set_title(GTK_WINDOW(app->window), window_title);
         g_free(window_title);
     }
@@ -3374,7 +3739,7 @@ static GtkWidget *nion_download_create_row(NionDownload *item,
 
 static void nion_save_download_history(NionApp *app)
 {
-    if (!app || !app->downloads_file || !app->downloads_list)
+    if (!app || app->is_private || !app->downloads_file || !app->downloads_list)
         return;
 
     GKeyFile *key_file = g_key_file_new();
@@ -3568,10 +3933,12 @@ static void on_download_finished(WebKitDownload *download, gpointer user_data)
         g_free(status);
     }
 
-    GNotification *notification = g_notification_new("NiOn download complete");
-    g_notification_set_body(notification, filename);
-    g_application_send_notification(G_APPLICATION(item->app->application), NULL, notification);
-    g_object_unref(notification);
+    if (!item->app->is_private) {
+        GNotification *notification = g_notification_new("NiOn download complete");
+        g_notification_set_body(notification, filename);
+        g_application_send_notification(G_APPLICATION(item->app->application), NULL, notification);
+        g_object_unref(notification);
+    }
 }
 
 static void on_download_started(WebKitNetworkSession *session,
@@ -3607,7 +3974,9 @@ static void on_download_started(WebKitNetworkSession *session,
 
     gtk_box_prepend(GTK_BOX(app->downloads_list), row);
     nion_download_update_panel_visibility(app);
-    nion_set_status(app, "● TOR CONNECTED — DOWNLOAD STARTED (Ctrl+J)");
+    nion_set_status(app, app->is_private
+        ? "● TOR CONNECTED — PRIVATE DOWNLOAD STARTED (EPHEMERAL HISTORY)"
+        : "● TOR CONNECTED — DOWNLOAD STARTED (Ctrl+J)");
 }
 
 static void nion_download_add_history_row(NionApp *app,
@@ -3641,7 +4010,7 @@ static void nion_download_add_history_row(NionApp *app,
 
 static void nion_load_download_history(NionApp *app)
 {
-    if (!app || !app->downloads_file || !app->downloads_list)
+    if (!app || app->is_private || !app->downloads_file || !app->downloads_list)
         return;
 
     if (g_file_test(app->downloads_file, G_FILE_TEST_EXISTS) &&
@@ -4419,6 +4788,31 @@ static void nion_cancel_active_downloads(NionApp *app)
     }
 }
 
+static void nion_private_cleanup_partial_downloads(NionApp *app)
+{
+    if (!app || !app->is_private || !app->downloads_list)
+        return;
+
+    for (GtkWidget *row = gtk_widget_get_first_child(app->downloads_list);
+         row;
+         row = gtk_widget_get_next_sibling(row)) {
+        NionDownload *item = g_object_get_data(G_OBJECT(row), "nion-download");
+        if (!item || item->finished || item->failed || !item->destination || !*item->destination)
+            continue;
+        if (g_file_test(item->destination, G_FILE_TEST_IS_REGULAR))
+            g_remove(item->destination);
+    }
+}
+
+static void nion_private_clear_closed_tabs(NionApp *app)
+{
+    if (!app || !app->is_private || !app->closed_tabs)
+        return;
+
+    while (!g_queue_is_empty(app->closed_tabs))
+        nion_closed_tab_free(g_queue_pop_head(app->closed_tabs));
+}
+
 static void nion_close_http_warning(NionTab *tab)
 {
     if (!tab || !tab->http_warning_window)
@@ -4758,33 +5152,41 @@ static void nion_context_menu_relabel_stock(WebKitContextMenu *context_menu,
                                              WebKitContextMenuAction stock_action,
                                              const gchar *label)
 {
-    GList *items = webkit_context_menu_get_items(context_menu);
-    gint position = 0;
+    /* webkit_context_menu_get_items() returns WebKit-owned storage. Never free
+     * or mutate that GList directly. Iterate through the indexed API instead,
+     * then replace the matching stock item at the same position. */
+    guint n_items = webkit_context_menu_get_n_items(context_menu);
 
-    for (GList *node = items; node; node = node->next, position++) {
-        WebKitContextMenuItem *item = node->data;
-        if (webkit_context_menu_item_get_stock_action(item) != stock_action)
+    for (guint position = 0; position < n_items; position++) {
+        WebKitContextMenuItem *item =
+            webkit_context_menu_get_item_at_position(context_menu, position);
+        if (!item || webkit_context_menu_item_get_stock_action(item) != stock_action)
             continue;
 
         WebKitContextMenuItem *replacement =
             webkit_context_menu_item_new_from_stock_action_with_label(stock_action, label);
+
+        /* ContextMenuItem derives from GInitiallyUnowned. Sink our reference
+         * before handing it to WebKit so the ownership is unambiguous across
+         * WebKitGTK versions, then release only our own reference. */
+        g_object_ref_sink(replacement);
         webkit_context_menu_remove(context_menu, item);
-        webkit_context_menu_insert(context_menu, replacement, position);
+        webkit_context_menu_insert(context_menu, replacement, (gint)position);
         g_object_unref(replacement);
         break;
     }
-
-    g_list_free(items);
 }
 
+/* WebKitGTK 6 / GTK4 removed the GdkEvent parameter from
+ * WebKitWebView::context-menu. Keep this callback signature exact: an
+ * extra legacy argument shifts hit_test_result/user_data and can turn
+ * user_data into an invalid pointer as soon as the menu is opened. */
 static gboolean on_webview_context_menu(WebKitWebView *web_view,
                                         WebKitContextMenu *context_menu,
-                                        GdkEvent *event,
                                         WebKitHitTestResult *hit_test_result,
                                         gpointer user_data)
 {
     (void)web_view;
-    (void)event;
     (void)hit_test_result;
     NionTab *tab = user_data;
 
@@ -4803,14 +5205,16 @@ static gboolean on_webview_context_menu(WebKitWebView *web_view,
         "Save Image");
 
     WebKitContextMenuItem *separator = webkit_context_menu_item_new_separator();
+    g_object_ref_sink(separator);
     webkit_context_menu_append(context_menu, separator);
     g_object_unref(separator);
 
     GAction *print_action = g_action_map_lookup_action(
-        G_ACTION_MAP(tab->app->application), "print");
+        G_ACTION_MAP(tab->app->window), "print");
     if (print_action) {
         WebKitContextMenuItem *print_item = webkit_context_menu_item_new_from_gaction(
             print_action, "Print / Save as PDF…", NULL);
+        g_object_ref_sink(print_item);
         webkit_context_menu_append(context_menu, print_item);
         g_object_unref(print_item);
     }
@@ -4832,13 +5236,18 @@ static WebKitWebView *on_webview_create(WebKitWebView *web_view,
                                         WebKitNavigationAction *navigation_action,
                                         gpointer user_data)
 {
-    (void)web_view;
     (void)navigation_action;
     NionApp *app = user_data;
 
-    /* Empty string creates an unloaded WebView, so target=_blank does not
-     * first load NiOn's home page and cancel it immediately. */
-    NionTab *tab = nion_new_tab(app, "", TRUE);
+    /* WebKit requires the WebView returned from ::create to be related to
+     * the opener. This is the path used by target=_blank/window.open() and
+     * by WebKit's stock "Open ... in New Window" actions that NiOn maps to
+     * tabs. Creating an unrelated WebView here can violate WebKit's popup
+     * lifecycle/process assumptions and crash the application.
+     *
+     * Empty string keeps the related view unloaded until WebKit supplies the
+     * requested target navigation; do not load NiOn's home page first. */
+    NionTab *tab = nion_new_tab_internal(app, "", TRUE, web_view);
     if (tab) {
         tab->home_page = FALSE;
         tab->error_page = FALSE;
@@ -4882,26 +5291,60 @@ static void on_notebook_page_reordered(GtkNotebook *notebook,
                                        guint page_num,
                                        gpointer user_data)
 {
-    (void)notebook;
-    (void)child;
-    (void)page_num;
-    nion_schedule_session_save(user_data);
+    NionApp *app = user_data;
+    if (!app || app->normalizing_tab_order)
+        return;
+
+    NionTab *tab = child ? g_object_get_data(G_OBJECT(child), "nion-tab") : NULL;
+    if (tab) {
+        gint pinned_count = nion_count_pinned_tabs(app);
+        gint target = -1;
+        if (tab->pinned && (gint)page_num >= pinned_count)
+            target = MAX(pinned_count - 1, 0);
+        else if (!tab->pinned && (gint)page_num < pinned_count)
+            target = pinned_count;
+
+        if (target >= 0 && target != (gint)page_num) {
+            app->normalizing_tab_order = TRUE;
+            gtk_notebook_reorder_child(notebook, child, target);
+            app->normalizing_tab_order = FALSE;
+        }
+    }
+
+    nion_schedule_session_save(app);
 }
 
-static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select)
+static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean select,
+                                      WebKitWebView *related_view)
 {
     NionTab *tab = g_new0(NionTab, 1);
     tab->app = app;
 
-    WebKitSettings *settings = webkit_settings_new();
-    nion_apply_privacy_settings(settings);
+    if (related_view) {
+        /* WebKitGTK 6 removed the legacy related-view constructor.
+         * Construct the popup with the "related-view" property instead,
+         * matching WebKit's GTK MiniBrowser. The related view supplies the
+         * same WebContext/NetworkSession (therefore NiOn's Tor-only session),
+         * while the opener's settings/content manager/policies preserve the
+         * browser's privacy and content configuration. */
+        tab->web_view = WEBKIT_WEB_VIEW(g_object_new(
+            WEBKIT_TYPE_WEB_VIEW,
+            "related-view", related_view,
+            "settings", webkit_web_view_get_settings(related_view),
+            "user-content-manager", webkit_web_view_get_user_content_manager(related_view),
+            "website-policies", webkit_web_view_get_website_policies(related_view),
+            NULL));
+    } else {
+        WebKitSettings *settings = webkit_settings_new();
+        nion_apply_privacy_settings(settings);
 
-    tab->web_view = WEBKIT_WEB_VIEW(g_object_new(
-        WEBKIT_TYPE_WEB_VIEW,
-        "network-session", app->network_session,
-        "settings", settings,
-        NULL));
-    g_object_unref(settings);
+        tab->web_view = WEBKIT_WEB_VIEW(g_object_new(
+            WEBKIT_TYPE_WEB_VIEW,
+            "network-session", app->network_session,
+            "settings", settings,
+            NULL));
+        g_object_unref(settings);
+    }
 
     tab->page = GTK_WIDGET(tab->web_view);
     g_object_set_data_full(G_OBJECT(tab->page), "nion-tab", tab, nion_tab_free);
@@ -4958,6 +5401,11 @@ static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select)
     nion_update_controls(app);
     nion_schedule_session_save(app);
     return tab;
+}
+
+static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select)
+{
+    return nion_new_tab_internal(app, uri, select, NULL);
 }
 
 static void on_new_tab_clicked(GtkButton *button, gpointer user_data)
@@ -5304,7 +5752,8 @@ static void action_downloads(GSimpleAction *action, GVariant *parameter, gpointe
 {
     (void)action;
     (void)parameter;
-    nion_show_downloads(user_data);
+    NionApp *app = user_data;
+    nion_show_downloads(app);
 }
 
 static void action_bookmark_page(GSimpleAction *action, GVariant *parameter, gpointer user_data)
@@ -5321,11 +5770,23 @@ static void action_bookmarks(GSimpleAction *action, GVariant *parameter, gpointe
     nion_show_bookmarks(user_data);
 }
 
+static void action_private_window(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    nion_open_private_window(user_data);
+}
+
 static void action_exit(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     (void)action;
     (void)parameter;
-    nion_request_close(user_data);
+    NionApp *app = user_data;
+    if (app && app->is_private) {
+        gtk_window_close(GTK_WINDOW(app->window));
+        return;
+    }
+    nion_request_close(app);
 }
 
 static gboolean on_about_activate_link(GtkAboutDialog *dialog,
@@ -5449,6 +5910,17 @@ static void on_preferences_save_clicked(GtkButton *button, gpointer user_data)
 
     nion_save_preferences(app);
     nion_apply_cookie_policy(app);
+    if (!app->is_private && app->private_windows) {
+        for (guint i = 0; i < app->private_windows->len; i++) {
+            NionApp *private_app = g_ptr_array_index(app->private_windows, i);
+            if (!private_app)
+                continue;
+            private_app->block_third_party_cookies = app->block_third_party_cookies;
+            g_free(private_app->search_engine);
+            private_app->search_engine = g_strdup(app->search_engine);
+            nion_apply_cookie_policy(private_app);
+        }
+    }
 
     if (!app->restore_session) {
         if (app->session_save_source_id) {
@@ -5480,6 +5952,11 @@ static void action_preferences(GSimpleAction *action, GVariant *parameter, gpoin
     (void)action;
     (void)parameter;
     NionApp *app = user_data;
+
+    if (app->is_private) {
+        nion_set_status(app, "● PRIVATE WINDOW — PREFERENCES ARE GLOBAL; EDIT THEM FROM THE NORMAL WINDOW");
+        return;
+    }
 
     if (app->preferences_window) {
         gtk_window_present(GTK_WINDOW(app->preferences_window));
@@ -5940,7 +6417,11 @@ static GtkWidget *nion_audit_row(const gchar *title, const gchar *status, const 
     gtk_label_set_xalign(GTK_LABEL(name), 0.0f);
     gtk_label_set_xalign(GTK_LABEL(state), 1.0f);
     gtk_widget_set_hexpand(name, TRUE);
-    gtk_widget_add_css_class(state, g_str_equal(status, "LIMITATION") ? "warning" : "success");
+    gtk_widget_add_css_class(state,
+                             (g_str_equal(status, "LIMITATION") ||
+                              g_str_equal(status, "UNSAFE") ||
+                              g_str_equal(status, "MISSING"))
+                                 ? "warning" : "success");
     gtk_widget_add_css_class(description, "nion-muted");
     gtk_label_set_xalign(GTK_LABEL(description), 0.0f);
     gtk_label_set_wrap(GTK_LABEL(description), TRUE);
@@ -5991,6 +6472,35 @@ static void action_privacy_audit(GSimpleAction *action, GVariant *parameter, gpo
     gtk_widget_add_css_class(intro, "nion-muted");
     gtk_box_append(GTK_BOX(box), intro);
 
+    if (app->is_private) {
+        gboolean ephemeral = app->network_session &&
+            webkit_network_session_is_ephemeral(app->network_session);
+        gboolean persistent_credentials = app->network_session &&
+            webkit_network_session_get_persistent_credential_storage_enabled(app->network_session);
+
+        gtk_box_append(GTK_BOX(box), nion_audit_row(
+            "Private WebKit session", ephemeral ? "EPHEMERAL" : "UNSAFE",
+            "Private Window creation is allowed only with an ephemeral WebKitNetworkSession. Cookies, cache, local storage, IndexedDB and other website data are not backed by NiOn's persistent profile."));
+        gtk_box_append(GTK_BOX(box), nion_audit_row(
+            "Private credentials", persistent_credentials ? "UNSAFE" : "BLOCKED",
+            "Persistent WebKit credential storage is disabled for Private Window and verified when the private network session is created."));
+        gtk_box_append(GTK_BOX(box), nion_audit_row(
+            "Session / pinned / zoom persistence", "BLOCKED",
+            "Private tabs and pinned state never enter session.ini, and Private Window does not read or write site-zoom.ini."));
+        gtk_box_append(GTK_BOX(box), nion_audit_row(
+            "Private downloads", "MEMORY-ONLY",
+            "Download rows, status and source URLs live only for this Private Window. Active partial downloads are cancelled and cleaned on close; completed files explicitly saved by the user remain on disk."));
+        gtk_box_append(GTK_BOX(box), nion_audit_row(
+            "Closed-tab recovery", "MEMORY-ONLY",
+            "Ctrl+Shift+T can recover a private tab only while this Private Window is alive. The closed-tab queue is erased when the window closes."));
+        gtk_box_append(GTK_BOX(box), nion_audit_row(
+            "Bookmarks / search preference", "GLOBAL BY DESIGN",
+            "Bookmarks and the selected search engine are intentionally shared with normal NiOn. Adding a bookmark from Private Window therefore creates persistent global data."));
+        gtk_box_append(GTK_BOX(box), nion_audit_row(
+            "User-exported artifacts", "LIMITATION",
+            "Completed downloads, saved/printed files, bookmarks and text explicitly copied to the system clipboard can outlive Private Window because the user exported them outside the ephemeral browser session."));
+    }
+
     gtk_box_append(GTK_BOX(box), nion_audit_row(
         "Tor-only proxy", "ENFORCED",
         "WebKit uses a custom SOCKS proxy on a runtime-selected 127.0.0.1:19050-19069 port with no bypass list; HTTP, HTTPS, WS and WSS are explicitly mapped to it."));
@@ -6040,6 +6550,7 @@ static void nion_install_actions(NionApp *app)
 {
     const GActionEntry actions[] = {
         { "new-tab", action_new_tab, NULL, NULL, NULL, {0} },
+        { "private-window", action_private_window, NULL, NULL, NULL, {0} },
         { "close-tab", action_close_tab, NULL, NULL, NULL, {0} },
         { "reopen-closed-tab", action_reopen_closed_tab, NULL, NULL, NULL, {0} },
         { "focus-location", action_focus_location, NULL, NULL, NULL, {0} },
@@ -6066,10 +6577,11 @@ static void nion_install_actions(NionApp *app)
         { "exit", action_exit, NULL, NULL, NULL, {0} },
     };
 
-    g_action_map_add_action_entries(G_ACTION_MAP(app->application),
+    g_action_map_add_action_entries(G_ACTION_MAP(app->window),
                                     actions, G_N_ELEMENTS(actions), app);
 
     const gchar *new_tab_accels[] = { "<Primary>t", NULL };
+    const gchar *private_window_accels[] = { "<Primary><Shift>p", NULL };
     const gchar *close_tab_accels[] = { "<Primary>w", NULL };
     const gchar *reopen_closed_tab_accels[] = { "<Primary><Shift>t", NULL };
     const gchar *focus_accels[] = { "<Primary>l", "F6", NULL };
@@ -6088,24 +6600,25 @@ static void nion_install_actions(NionApp *app)
     const gchar *downloads_accels[] = { "<Primary>j", NULL };
     const gchar *bookmark_accels[] = { "<Primary>d", NULL };
 
-    gtk_application_set_accels_for_action(app->application, "app.new-tab", new_tab_accels);
-    gtk_application_set_accels_for_action(app->application, "app.close-tab", close_tab_accels);
-    gtk_application_set_accels_for_action(app->application, "app.reopen-closed-tab", reopen_closed_tab_accels);
-    gtk_application_set_accels_for_action(app->application, "app.focus-location", focus_accels);
-    gtk_application_set_accels_for_action(app->application, "app.reload", reload_accels);
-    gtk_application_set_accels_for_action(app->application, "app.hard-reload", hard_reload_accels);
-    gtk_application_set_accels_for_action(app->application, "app.find", find_accels);
-    gtk_application_set_accels_for_action(app->application, "app.zoom-in", zoom_in_accels);
-    gtk_application_set_accels_for_action(app->application, "app.zoom-out", zoom_out_accels);
-    gtk_application_set_accels_for_action(app->application, "app.zoom-reset", zoom_reset_accels);
-    gtk_application_set_accels_for_action(app->application, "app.print", print_accels);
-    gtk_application_set_accels_for_action(app->application, "app.fullscreen", fullscreen_accels);
-    gtk_application_set_accels_for_action(app->application, "app.back", back_accels);
-    gtk_application_set_accels_for_action(app->application, "app.forward", forward_accels);
-    gtk_application_set_accels_for_action(app->application, "app.next-tab", next_tab_accels);
-    gtk_application_set_accels_for_action(app->application, "app.previous-tab", previous_tab_accels);
-    gtk_application_set_accels_for_action(app->application, "app.downloads", downloads_accels);
-    gtk_application_set_accels_for_action(app->application, "app.bookmark-page", bookmark_accels);
+    gtk_application_set_accels_for_action(app->application, "win.new-tab", new_tab_accels);
+    gtk_application_set_accels_for_action(app->application, "win.private-window", private_window_accels);
+    gtk_application_set_accels_for_action(app->application, "win.close-tab", close_tab_accels);
+    gtk_application_set_accels_for_action(app->application, "win.reopen-closed-tab", reopen_closed_tab_accels);
+    gtk_application_set_accels_for_action(app->application, "win.focus-location", focus_accels);
+    gtk_application_set_accels_for_action(app->application, "win.reload", reload_accels);
+    gtk_application_set_accels_for_action(app->application, "win.hard-reload", hard_reload_accels);
+    gtk_application_set_accels_for_action(app->application, "win.find", find_accels);
+    gtk_application_set_accels_for_action(app->application, "win.zoom-in", zoom_in_accels);
+    gtk_application_set_accels_for_action(app->application, "win.zoom-out", zoom_out_accels);
+    gtk_application_set_accels_for_action(app->application, "win.zoom-reset", zoom_reset_accels);
+    gtk_application_set_accels_for_action(app->application, "win.print", print_accels);
+    gtk_application_set_accels_for_action(app->application, "win.fullscreen", fullscreen_accels);
+    gtk_application_set_accels_for_action(app->application, "win.back", back_accels);
+    gtk_application_set_accels_for_action(app->application, "win.forward", forward_accels);
+    gtk_application_set_accels_for_action(app->application, "win.next-tab", next_tab_accels);
+    gtk_application_set_accels_for_action(app->application, "win.previous-tab", previous_tab_accels);
+    gtk_application_set_accels_for_action(app->application, "win.downloads", downloads_accels);
+    gtk_application_set_accels_for_action(app->application, "win.bookmark-page", bookmark_accels);
 }
 
 static gchar *nion_find_tor_binary(void)
@@ -6780,17 +7293,39 @@ static void nion_apply_network_proxy(NionApp *app)
     webkit_network_proxy_settings_free(proxy);
 }
 
-static void nion_prepare_network(NionApp *app)
+static gboolean nion_prepare_network(NionApp *app)
 {
+    if (!app)
+        return FALSE;
+
     if (app->network_session) {
+        if (app->is_private && !webkit_network_session_is_ephemeral(app->network_session)) {
+            g_critical("Refusing to use a non-ephemeral WebKit network session for Private Window");
+            return FALSE;
+        }
         nion_apply_network_proxy(app);
-        return;
+        return TRUE;
     }
 
-    app->network_session = webkit_network_session_new(app->data_dir, app->cache_dir);
+    app->network_session = app->is_private
+        ? webkit_network_session_new_ephemeral()
+        : webkit_network_session_new(app->data_dir, app->cache_dir);
+    if (!app->network_session)
+        return FALSE;
+
+    /* A Private Window is allowed to exist only when WebKit confirms that
+     * the backing NetworkSession is ephemeral. This converts the private
+     * storage promise into a runtime invariant instead of relying only on
+     * the constructor call above. */
+    if (app->is_private && !webkit_network_session_is_ephemeral(app->network_session)) {
+        g_critical("Private Window WebKit session is not ephemeral; blocking window creation");
+        g_clear_object(&app->network_session);
+        return FALSE;
+    }
+
     /* Site information relies on strict certificate verification. Make the
      * existing fail-on-TLS-errors behavior explicit instead of relying on a
-     * library default. */
+     * library default. Private windows use the same strict policy. */
     webkit_network_session_set_tls_errors_policy(app->network_session,
                                                   WEBKIT_TLS_ERRORS_POLICY_FAIL);
 
@@ -6799,22 +7334,34 @@ static void nion_prepare_network(NionApp *app)
     webkit_website_data_manager_set_favicons_enabled(data_manager, TRUE);
 
     WebKitCookieManager *cookies = webkit_network_session_get_cookie_manager(app->network_session);
-    webkit_cookie_manager_set_persistent_storage(cookies,
-                                                  app->cookie_file,
-                                                  WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);
+    if (!app->is_private) {
+        webkit_cookie_manager_set_persistent_storage(cookies,
+                                                      app->cookie_file,
+                                                      WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);
+    }
     nion_apply_cookie_policy(app);
 
-    webkit_network_session_set_persistent_credential_storage_enabled(app->network_session, TRUE);
+    webkit_network_session_set_persistent_credential_storage_enabled(app->network_session,
+                                                                      !app->is_private);
+    if (app->is_private &&
+        webkit_network_session_get_persistent_credential_storage_enabled(app->network_session)) {
+        g_critical("Private Window persistent credential storage could not be disabled");
+        g_clear_object(&app->network_session);
+        return FALSE;
+    }
+
     nion_apply_network_proxy(app);
 
     g_signal_connect(app->network_session, "download-started",
                      G_CALLBACK(on_download_started), app);
+    return TRUE;
 }
 
 static void nion_apply_css(void)
 {
     const gchar *css =
         ".nion-toolbar { padding: 7px 8px; }"
+        ".nion-private-toolbar { border-bottom: 2px solid alpha(currentColor,0.28); }"
         ".nion-toolbar button { min-width: 32px; min-height: 32px; padding: 2px; }"
         ".nion-toolbar entry { min-height: 32px; }"
         ".nion-find-bar { border-top: 1px solid alpha(currentColor,0.10); border-bottom: 1px solid alpha(currentColor,0.10); }"
@@ -6839,6 +7386,8 @@ static void nion_apply_css(void)
         ".nion-download-detail { opacity: 0.72; font-size: 0.88em; }"
         ".nion-muted { opacity: 0.72; }"
         ".nion-tab-label { min-height: 28px; }"
+        ".nion-tab-pinned { font-weight: 700; }"
+        ".nion-tab-pin { font-size: 0.90em; }"
         ".nion-tab-audio { min-width: 24px; min-height: 24px; padding: 0; }"
         ".nion-tab-close { min-width: 24px; min-height: 24px; padding: 0; }"
         ".nion-new-tab { min-width: 30px; min-height: 30px; padding: 0 5px; margin: 3px 6px; }"
@@ -6988,10 +7537,58 @@ static void nion_request_close(NionApp *app)
     gtk_window_present(GTK_WINDOW(window));
 }
 
+static gboolean nion_free_private_app_idle(gpointer user_data)
+{
+    NionApp *app = user_data;
+    if (!app)
+        return G_SOURCE_REMOVE;
+
+    NionApp *owner = app->owner;
+    if (owner && owner->private_windows)
+        g_ptr_array_remove_fast(owner->private_windows, app);
+
+    g_clear_object(&app->network_session);
+    g_clear_pointer(&app->tor_proxy_uri, g_free);
+    g_clear_pointer(&app->tor_last_log, g_free);
+    g_clear_pointer(&app->search_engine, g_free);
+    g_clear_pointer(&app->download_dir, g_free);
+    g_clear_pointer(&app->preferences_file, g_free);
+    g_clear_pointer(&app->bookmarks_file, g_free);
+    if (app->bookmarks)
+        g_ptr_array_unref(app->bookmarks);
+    if (app->closed_tabs)
+        g_queue_free_full(app->closed_tabs, nion_closed_tab_free);
+    g_free(app);
+    return G_SOURCE_REMOVE;
+}
+
 static gboolean on_window_close_request(GtkWindow *window, gpointer user_data)
 {
-    (void)window;
     NionApp *app = user_data;
+    if (app->is_private) {
+        if (app->shutting_down)
+            return FALSE;
+        app->shutting_down = TRUE;
+        if (app->private_tab_close_confirm_window) {
+            gtk_window_destroy(GTK_WINDOW(app->private_tab_close_confirm_window));
+            app->private_tab_close_confirm_window = NULL;
+            app->private_tab_close_confirm_open = FALSE;
+        }
+        nion_cancel_active_downloads(app);
+        nion_private_cleanup_partial_downloads(app);
+        nion_private_clear_closed_tabs(app);
+        nion_stop_all_web_activity(app);
+        if (app->downloads_window) {
+            gtk_window_destroy(GTK_WINDOW(app->downloads_window));
+            app->downloads_window = NULL;
+            app->downloads_list = NULL;
+            app->downloads_empty_label = NULL;
+        }
+        gtk_window_destroy(window);
+        g_idle_add(nion_free_private_app_idle, app);
+        return TRUE;
+    }
+
     if (app->shutting_down || app->close_confirmed)
         return FALSE;
 
@@ -6999,10 +7596,96 @@ static gboolean on_window_close_request(GtkWindow *window, gpointer user_data)
     return TRUE;
 }
 
+static void nion_private_sync_from_owner(NionApp *private_app, NionApp *owner)
+{
+    if (!private_app || !owner)
+        return;
+
+    private_app->tor_ready = owner->tor_ready;
+    private_app->tor_failed = owner->tor_failed;
+    private_app->tor_bootstrap_percent = owner->tor_bootstrap_percent;
+    private_app->tor_socks_port = owner->tor_socks_port;
+    g_free(private_app->tor_proxy_uri);
+    private_app->tor_proxy_uri = g_strdup(owner->tor_proxy_uri ? owner->tor_proxy_uri
+                                                               : "socks://127.0.0.1:9");
+    g_free(private_app->tor_last_log);
+    private_app->tor_last_log = g_strdup(owner->tor_last_log);
+    nion_apply_network_proxy(private_app);
+    if (!private_app->tor_ready) {
+        nion_stop_all_web_activity(private_app);
+        nion_cancel_active_downloads(private_app);
+    }
+
+    if (private_app->window) {
+        if (private_app->tor_ready)
+            nion_set_status(private_app, "● TOR CONNECTED — PRIVATE");
+        else if (private_app->tor_failed)
+            nion_set_status(private_app, "○ TOR ERROR — PRIVATE BROWSING BLOCKED");
+        else {
+            gchar *status = g_strdup_printf("○ CONNECTING TO TOR… %d%% — PRIVATE",
+                                            private_app->tor_bootstrap_percent);
+            nion_set_status(private_app, status);
+            g_free(status);
+        }
+        nion_refresh_home_pages(private_app);
+        nion_update_controls(private_app);
+    }
+}
+
+static void nion_sync_private_windows_tor(NionApp *app)
+{
+    if (!app || app->is_private || !app->private_windows)
+        return;
+    for (guint i = 0; i < app->private_windows->len; i++) {
+        NionApp *private_app = g_ptr_array_index(app->private_windows, i);
+        nion_private_sync_from_owner(private_app, app);
+    }
+}
+
+static void nion_open_private_window(NionApp *source)
+{
+    if (!source)
+        return;
+    NionApp *owner = source->is_private ? source->owner : source;
+    if (!owner)
+        return;
+
+    NionApp *app = g_new0(NionApp, 1);
+    app->application = owner->application;
+    app->is_private = TRUE;
+    app->owner = owner;
+    app->restore_session = FALSE;
+    app->block_third_party_cookies = owner->block_third_party_cookies;
+    app->search_engine = g_strdup(owner->search_engine ? owner->search_engine : "duckduckgo");
+    app->preferences_file = g_strdup(owner->preferences_file);
+    app->bookmarks_file = g_strdup(owner->bookmarks_file);
+    app->download_dir = g_strdup(owner->download_dir);
+    app->bookmarks = owner->bookmarks ? g_ptr_array_ref(owner->bookmarks)
+                                     : g_ptr_array_new_with_free_func(nion_bookmark_free);
+    app->closed_tabs = g_queue_new();
+
+    nion_private_sync_from_owner(app, owner);
+    if (!nion_prepare_network(app)) {
+        nion_set_status(owner, owner->tor_ready
+            ? "● TOR CONNECTED — PRIVATE WINDOW BLOCKED: EPHEMERAL SESSION UNAVAILABLE"
+            : "○ TOR NOT READY — PRIVATE WINDOW BLOCKED: EPHEMERAL SESSION UNAVAILABLE");
+        nion_free_private_app_idle(app);
+        return;
+    }
+
+    if (!owner->private_windows)
+        owner->private_windows = g_ptr_array_new();
+    g_ptr_array_add(owner->private_windows, app);
+
+    nion_build_ui(app);
+    nion_private_sync_from_owner(app, owner);
+}
+
 static void nion_build_downloads_window(NionApp *app)
 {
     app->downloads_window = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(app->downloads_window), "Downloads — NiOn");
+    gtk_window_set_title(GTK_WINDOW(app->downloads_window),
+                         app->is_private ? "Private Downloads — NiOn" : "Downloads — NiOn");
     gtk_window_set_transient_for(GTK_WINDOW(app->downloads_window), GTK_WINDOW(app->window));
     gtk_window_set_default_size(GTK_WINDOW(app->downloads_window), 760, 520);
     gtk_window_set_icon_name(GTK_WINDOW(app->downloads_window), NION_APP_ID);
@@ -7018,7 +7701,7 @@ static void nion_build_downloads_window(NionApp *app)
     gtk_widget_set_margin_end(header, 14);
 
     GtkWidget *titles = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    GtkWidget *title = gtk_label_new("Downloads");
+    GtkWidget *title = gtk_label_new(app->is_private ? "Private Downloads" : "Downloads");
     GtkWidget *path = gtk_label_new(app->download_dir);
     gtk_widget_add_css_class(title, "title-3");
     gtk_widget_add_css_class(path, "nion-muted");
@@ -7032,7 +7715,9 @@ static void nion_build_downloads_window(NionApp *app)
 
     GtkWidget *clear = gtk_button_new_with_label("Clear Downloads");
     gtk_widget_set_valign(clear, GTK_ALIGN_CENTER);
-    gtk_widget_set_tooltip_text(clear, "Remove completed, failed and cancelled entries from history");
+    gtk_widget_set_tooltip_text(clear, app->is_private
+        ? "Remove entries from this private window only"
+        : "Remove completed, failed and cancelled entries from history");
     gtk_box_append(GTK_BOX(header), titles);
     gtk_box_append(GTK_BOX(header), clear);
     gtk_box_append(GTK_BOX(root), header);
@@ -7056,7 +7741,9 @@ static void nion_build_downloads_window(NionApp *app)
     gtk_widget_set_margin_end(app->downloads_list, 14);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), app->downloads_list);
 
-    app->downloads_empty_label = gtk_label_new("No downloads yet.\nDownloads made by NiOn will appear here.");
+    app->downloads_empty_label = gtk_label_new(app->is_private
+        ? "No private downloads yet.\nHistory exists only while this Private Window is open."
+        : "No downloads yet.\nDownloads made by NiOn will appear here.");
     gtk_label_set_justify(GTK_LABEL(app->downloads_empty_label), GTK_JUSTIFY_CENTER);
     gtk_widget_add_css_class(app->downloads_empty_label, "nion-muted");
     gtk_widget_set_halign(app->downloads_empty_label, GTK_ALIGN_CENTER);
@@ -7073,9 +7760,10 @@ static void nion_build_downloads_window(NionApp *app)
 static void nion_build_ui(NionApp *app)
 {
     app->window = gtk_application_window_new(app->application);
-    gtk_window_set_title(GTK_WINDOW(app->window), "NiOn");
+    gtk_window_set_title(GTK_WINDOW(app->window), app->is_private ? "NiOn — Private" : "NiOn");
     gtk_window_set_icon_name(GTK_WINDOW(app->window), NION_APP_ID);
     gtk_window_set_default_size(GTK_WINDOW(app->window), 1100, 760);
+    nion_install_actions(app);
 
     GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_window_set_child(GTK_WINDOW(app->window), root);
@@ -7083,6 +7771,8 @@ static void nion_build_ui(NionApp *app)
     GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     app->toolbar = toolbar;
     gtk_widget_add_css_class(toolbar, "nion-toolbar");
+    if (app->is_private)
+        gtk_widget_add_css_class(toolbar, "nion-private-toolbar");
     gtk_box_append(GTK_BOX(root), toolbar);
 
     app->back_button = gtk_button_new_from_icon_name("go-previous-symbolic");
@@ -7135,24 +7825,25 @@ static void nion_build_ui(NionApp *app)
     gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(app->menu_button), "open-menu-symbolic");
 
     GMenu *menu = g_menu_new();
-    g_menu_append(menu, "Find in Page", "app.find");
-    g_menu_append(menu, "Reload Without Cache", "app.hard-reload");
+    g_menu_append(menu, "New Private Window", "win.private-window");
+    g_menu_append(menu, "Find in Page", "win.find");
+    g_menu_append(menu, "Reload Without Cache", "win.hard-reload");
     GMenu *zoom_menu = g_menu_new();
-    g_menu_append(zoom_menu, "Zoom In", "app.zoom-in");
-    g_menu_append(zoom_menu, "Zoom Out", "app.zoom-out");
-    g_menu_append(zoom_menu, "Reset Zoom", "app.zoom-reset");
+    g_menu_append(zoom_menu, "Zoom In", "win.zoom-in");
+    g_menu_append(zoom_menu, "Zoom Out", "win.zoom-out");
+    g_menu_append(zoom_menu, "Reset Zoom", "win.zoom-reset");
     g_menu_append_submenu(menu, "Zoom", G_MENU_MODEL(zoom_menu));
     g_object_unref(zoom_menu);
-    g_menu_append(menu, "Fullscreen", "app.fullscreen");
-    g_menu_append(menu, "Print / Save as PDF…", "app.print");
-    g_menu_append(menu, "Bookmarks", "app.bookmarks");
-    g_menu_append(menu, "Downloads", "app.downloads");
-    g_menu_append(menu, "Preferences", "app.preferences");
-    g_menu_append(menu, "Privacy & Leak Audit", "app.privacy-audit");
-    g_menu_append(menu, "Clear Data for This Site…", "app.clear-site-data");
-    g_menu_append(menu, "Clear Browsing Data…", "app.clear-data");
-    g_menu_append(menu, "About NiOn", "app.about");
-    g_menu_append(menu, "Exit", "app.exit");
+    g_menu_append(menu, "Fullscreen", "win.fullscreen");
+    g_menu_append(menu, "Print / Save as PDF…", "win.print");
+    g_menu_append(menu, "Bookmarks", "win.bookmarks");
+    g_menu_append(menu, app->is_private ? "Private Downloads" : "Downloads", "win.downloads");
+    g_menu_append(menu, "Preferences", "win.preferences");
+    g_menu_append(menu, "Privacy & Leak Audit", "win.privacy-audit");
+    g_menu_append(menu, "Clear Data for This Site…", "win.clear-site-data");
+    g_menu_append(menu, "Clear Browsing Data…", "win.clear-data");
+    g_menu_append(menu, "About NiOn", "win.about");
+    g_menu_append(menu, app->is_private ? "Close Private Window" : "Exit", "win.exit");
     gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(app->menu_button), G_MENU_MODEL(menu));
     g_object_unref(menu);
 
@@ -7250,7 +7941,7 @@ static void nion_build_ui(NionApp *app)
     g_signal_connect(app->window, "close-request", G_CALLBACK(on_window_close_request), app);
     g_signal_connect(app->window, "notify::fullscreened", G_CALLBACK(on_window_fullscreen_notify), app);
 
-    if (!nion_restore_saved_session(app))
+    if (app->is_private || !nion_restore_saved_session(app))
         nion_new_tab(app, NULL, TRUE);
 
     /* Mark the live session dirty immediately. A graceful close writes it
@@ -7316,6 +8007,36 @@ static void nion_cleanup(NionApp *app)
     }
 
     app->shutting_down = TRUE;
+    if (app->private_windows) {
+        while (app->private_windows->len > 0) {
+            NionApp *private_app = g_ptr_array_index(app->private_windows, app->private_windows->len - 1);
+            if (private_app) {
+                private_app->shutting_down = TRUE;
+                nion_cancel_active_downloads(private_app);
+                nion_private_cleanup_partial_downloads(private_app);
+                nion_private_clear_closed_tabs(private_app);
+            }
+            if (private_app && private_app->downloads_window)
+                gtk_window_destroy(GTK_WINDOW(private_app->downloads_window));
+            if (private_app && private_app->window)
+                gtk_window_destroy(GTK_WINDOW(private_app->window));
+            g_ptr_array_remove_index_fast(app->private_windows, app->private_windows->len - 1);
+            if (private_app) {
+                g_clear_object(&private_app->network_session);
+                g_clear_pointer(&private_app->tor_proxy_uri, g_free);
+                g_clear_pointer(&private_app->tor_last_log, g_free);
+                g_clear_pointer(&private_app->search_engine, g_free);
+                g_clear_pointer(&private_app->download_dir, g_free);
+                g_clear_pointer(&private_app->preferences_file, g_free);
+                g_clear_pointer(&private_app->bookmarks_file, g_free);
+                if (private_app->bookmarks) g_ptr_array_unref(private_app->bookmarks);
+                if (private_app->closed_tabs) g_queue_free_full(private_app->closed_tabs, nion_closed_tab_free);
+                g_free(private_app);
+            }
+        }
+        g_ptr_array_unref(app->private_windows);
+        app->private_windows = NULL;
+    }
     nion_cancel_active_downloads(app);
     nion_stop_tor_gracefully(app);
 
@@ -7386,8 +8107,10 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     nion_load_bookmarks(app);
     nion_load_site_zoom(app);
     gboolean tor_port_ok = nion_choose_tor_port(app);
-    nion_prepare_network(app);
-    nion_install_actions(app);
+    if (!nion_prepare_network(app)) {
+        g_critical("NiOn could not create its WebKit network session");
+        return;
+    }
     nion_build_ui(app);
     if (tor_port_ok)
         nion_start_tor(app);
@@ -7404,6 +8127,7 @@ static void on_shutdown(GApplication *application, gpointer user_data)
 int main(int argc, char **argv)
 {
     NionApp app = {0};
+    app.private_windows = g_ptr_array_new();
     GtkApplication *application = gtk_application_new(NION_APP_ID, G_APPLICATION_DEFAULT_FLAGS);
     g_application_set_resource_base_path(G_APPLICATION(application), "/io/github/jeannesbryan/Nion");
 

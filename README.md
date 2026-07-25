@@ -1,91 +1,199 @@
-# NiOn
+# NiOn — Minimal Onion
 
-**NiOn — Minimal Onion** is a minimal Linux web browser for clearnet and `.onion` sites. It uses GTK 4 and WebKitGTK 6 for the browser UI/engine and routes browsing traffic through its own bundled Tor runtime.
+NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens both clearnet and Tor v3 `.onion` sites through its own bundled Tor runtime and is designed to fail closed rather than silently fall back to a direct connection.
 
-**Current development: 1.2.1 — Version & Dependency Manifest**  
-**Current stable release: 1.1.0**
+**Stable release: 1.3.0**  
+**Platform: GNU/Linux x86_64 AppImage**
 
-> NiOn is not Tor Browser. It does not claim Tor Browser-grade anti-fingerprinting, anonymity, or browser-hardening guarantees.
+> NiOn is not Tor Browser. It does not claim Tor Browser-grade anonymity, anti-fingerprinting, or browser-hardening guarantees.
 
-## Why NiOn?
+## What NiOn does
 
-NiOn is intentionally small. The goal is not to reproduce a full desktop browser, but to provide a practical multi-tab browser where Tor routing is the default and direct-network fallback is intentionally avoided.
+- Routes clearnet and `.onion` browsing through bundled Tor.
+- Blocks new web navigation when Tor is unavailable or the Tor child process fails.
+- Supports multiple tabs, session restore, pinned tabs, closed-tab recovery, bookmarks, downloads, per-site zoom, page find, printing/PDF, and site information.
+- Keeps normal cookies and website data persistent so ordinary login sessions can survive restarts.
+- Provides a separate Private Window backed by an ephemeral WebKit network session.
+- Detects Onion-Location advertisements and can open the advertised onion service in a new tab.
+- Uses WebKitGTK's download pipeline, so web downloads stay on the same Tor-proxied browser network path.
 
-**Open websites. Open onions. Everything through Tor.**
+## Main features
 
-## Features
+### Tabs
 
-- Clearnet and Tor v3 `.onion` browsing through Tor.
-- Bundled, signature-verified Tor Expert Bundle runtime.
-- Multi-tab GTK 4 interface with WebKitGTK 6.
-- Persistent cookies and website data so login sessions can survive restarts.
-- Session restore, including tab URLs and WebKit back/forward state.
-- Fail-closed behavior when Tor is unavailable or crashes.
-- Onion-Location detection with an **Onion** badge that opens the advertised onion URL in a new tab.
-- Downloads through the Tor-proxied WebKit network session, with `Ctrl+J` history and per-item Open/Folder/Copy Link/Retry actions.
-- Find in Page, page zoom, hard reload, fullscreen, Home/New Tab, and configurable search engine.
-- Simple local bookmarks with `Ctrl+D`, Open/Rename/Delete management, a live bookmark button beside the address bar, and live title/URL search in the Bookmarks window.
-- Per-tab audio indicator and one-click mute/unmute for pages playing sound.
-- Reopen the last 10 closed web tabs with `Ctrl+Shift+T`.
-- Right-click tab context menu: Reload, Duplicate, Mute/Unmute, Close, Close Others, and Close Tabs to the Right.
-- Improved page context menu that opens link/image targets in NiOn tabs while retaining WebKit copy/edit/media actions.
-- Print or save a page as PDF with `Ctrl+P` or **Print / Save as PDF…**.
-- Per-site zoom memory: HTTP/HTTPS for the same hostname share zoom, `.onion` sites are supported, and non-default ports remain distinct.
-- Site/connection information popover showing the host, website connection, Tor route, mixed-content state, and full address.
-- Mixed-content detection for HTTPS pages, with a visible warning icon/status when WebKit reports insecure displayed or active content.
-- Internal error pages and Tor-aware status information.
-- Persistent browser profile outside the AppImage, so replacing the AppImage does not intentionally erase logins or tabs.
-- Linux x86_64 AppImage packaging pipeline with bundled WebKit subprocesses and Tor runtime.
+- Multi-tab browsing.
+- Reopen the last 10 closed tabs with `Ctrl+Shift+T`.
+- Tab context menu: Reload, Duplicate, Pin/Unpin, Mute/Unmute, Close, Close Other Tabs, and Close Tabs to the Right.
+- Pinned tabs stay in the left tab block, show a `📌` marker, and are restored with the normal session.
+- Pinned tabs are protected from bulk-close actions, while explicit Close Tab / `Ctrl+W` still works.
+- Links using `target="_blank"`, `window.open()`, and context-menu new-tab actions open inside NiOn.
 
-## Screens at a glance
+### Private Window
+
+Open a Private Window with `Ctrl+Shift+P`.
+
+Private Window behavior:
+
+- uses a dedicated ephemeral WebKit network session;
+- does not persist cookies, site storage, WebKit credentials, session restore, pinned state, per-site zoom, or download history;
+- keeps private closed-tab recovery only while that Private Window is alive;
+- confirms individual private-tab closes to reduce accidental loss;
+- uses the same bundled Tor runtime and the same fail-closed policy as normal browsing;
+- keeps bookmarks and the selected search engine global by design.
+
+Private downloads are memory-only in NiOn. Active private downloads are cancelled when the Private Window closes and tracked partial files are cleaned. A file that already finished downloading remains on disk because it was explicitly exported by the user.
+
+### Bookmarks
+
+- Bookmark the current page with `Ctrl+D` or the `☆ / ★` toolbar button.
+- Local flat-file storage; no account or cloud sync.
+- Open, Rename, and Delete actions.
+- Live search by title and URL.
+- Search is local/in-memory and does not create a separate index.
+
+### Downloads
+
+Open Downloads with `Ctrl+J`.
+
+Normal download history is persistent and supports:
+
+- progress and cancellation;
+- Open File;
+- Open Containing Folder;
+- Copy Download Link;
+- Retry Failed Download.
+
+Cancelled downloads are not treated as failed retries. Retry uses the active NiOn WebView and remains blocked while Tor is unavailable.
+
+### Page actions
+
+- Better web-page context menu for links/images while retaining useful WebKit actions.
+- Print / Save as PDF with `Ctrl+P`.
+- Find in Page with `Ctrl+F`.
+- Hard Reload with `Ctrl+Shift+R`.
+- Per-site zoom memory with `Ctrl++`, `Ctrl+-`, and `Ctrl+0`.
+- HTTP and HTTPS on the same hostname share zoom; non-default ports remain distinct; `.onion` hosts are supported.
+- `Ctrl+0` returns to 100% and removes the current site's stored zoom override.
+
+### Site and connection information
+
+The site-information popover reports:
+
+- current host;
+- connection type;
+- Tor route state;
+- mixed-content state;
+- full address.
+
+HTTPS certificate errors remain strict-fail. For `.onion` services NiOn distinguishes onion-service transport from ordinary HTTPS rather than labeling every onion URL as HTTPS.
+
+### Onion-Location
+
+When an HTTPS clearnet page advertises a valid Tor v3 Onion-Location, NiOn shows an **Onion** badge. Selecting it opens the onion address inside NiOn.
+
+### Audio
+
+- Per-tab audio activity indicator.
+- Mute/unmute from the tab controls/context menu.
+- Mute state participates in normal session restore.
+
+### Local data controls
+
+- **Clear Data for This Site…** removes matching WebKit website data for the active site.
+- **Clear Browsing Data…** clears normal browsing data globally.
+- Private website data is ephemeral and is not mixed into the normal persistent profile.
+
+## Privacy model
+
+NiOn is intentionally Tor-only for web traffic. Important safeguards include:
+
+- custom SOCKS proxy routing to the bundled Tor process;
+- no intentional direct-network fallback;
+- dead loopback SOCKS replacement after Tor failure;
+- navigation blocking while Tor is offline;
+- WebRTC disabled;
+- DNS prefetching disabled;
+- camera, microphone, geolocation, and notification permission requests denied;
+- WebGL and WebAudio disabled;
+- Tor internal-address rejection;
+- cancellation of relevant WebKit activity/downloads when Tor fails.
+
+The Private Window additionally verifies at runtime that its WebKit network session is ephemeral and that persistent credential storage is disabled.
+
+See [PRIVACY.md](PRIVACY.md) for the threat model and limitations.
+
+## Strengths
+
+- Small native GTK application rather than a full general-purpose browser suite.
+- Bundled and signature-verified Tor runtime; no system Tor is required for normal use.
+- Fail-closed behavior is treated as a core invariant.
+- Normal persistent browsing and ephemeral private browsing are intentionally separated.
+- Version, Tor pin, AppImage name, About metadata, and release metadata are controlled by the centralized `release/manifest/` files.
+- AppImage packaging keeps the user profile outside the executable so replacing the AppImage does not intentionally wipe browser data.
+
+## Limitations
+
+- NiOn is **not Tor Browser** and should not be treated as providing the same anti-fingerprinting/anonymity protections.
+- Current production AppImage target is x86_64 Linux.
+- Website compatibility can be reduced by privacy hardening such as disabled WebRTC, WebGL, WebAudio, and denied device permissions.
+- A completed download, saved/printed PDF, bookmark, or text copied to the system clipboard can outlive a Private Window because it was explicitly exported outside the ephemeral session.
+- Normal browsing intentionally persists cookies/site data and therefore leaves local state unless the user clears it.
+- AppImage portability still depends on host-core components such as the kernel, glibc compatibility, graphics stack, and desktop integration.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+T` | New tab |
+| `Ctrl+Shift+P` | New Private Window |
+| `Ctrl+W` | Close current tab |
+| `Ctrl+Shift+T` | Reopen closed tab |
+| `Ctrl+L` / `F6` | Focus address bar |
+| `Ctrl+R` / `F5` | Reload |
+| `Ctrl+Shift+R` | Reload without cache |
+| `Ctrl+F` | Find in page |
+| `Ctrl++` / `Ctrl+=` | Zoom in |
+| `Ctrl+-` | Zoom out |
+| `Ctrl+0` | Reset zoom and forget site override |
+| `Ctrl+P` | Print / Save as PDF |
+| `Ctrl+Tab` / `Ctrl+PageDown` | Next tab |
+| `Ctrl+Shift+Tab` / `Ctrl+PageUp` | Previous tab |
+| `Ctrl+J` | Downloads / Private Downloads |
+| `Ctrl+D` | Bookmark current page |
+| `Alt+Left` | Back |
+| `Alt+Right` | Forward |
+| `F11` | Fullscreen |
+
+## Persistent profile
+
+Normal NiOn data lives outside the AppImage:
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│ ←  →  ↻  ⌂ │ ⓘ │ URL / Search            │ ☆ │ ≡   │
-├──────────────────────────────────────────────────────────┤
-│ Tab 1 × │ Tab 2 × │ +                                  │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│                        WEB PAGE                          │
-│                                                          │
-├──────────────────────────────────────────────────────────┤
-│ ● TOR CONNECTED                                         │
-└──────────────────────────────────────────────────────────┘
+~/.local/share/nion/   cookies, session, downloads, bookmarks, Tor state, WebKit data
+~/.config/nion/        preferences and per-site zoom
+~/.cache/nion/         WebKit cache
 ```
 
-## Centralized release manifest
+Replacing the AppImage is designed to reuse these paths. Malformed NiOn-owned metadata files are bounded and may be quarantined rather than silently overwritten.
 
-NiOn 1.2.1 removes release-critical version duplication. Canonical values live in `release/manifest/` and are consumed by Meson, the About dialog, bundled-Tor preparation/repair, AppImage naming, AppStream generation, release preflight, source archive naming, and GitHub Actions.
+Private Window data does not use these normal persistence paths for private website/session/download state.
 
-For example:
+## Run the AppImage
 
 ```bash
-cat release/manifest/NION_VERSION
-cat release/manifest/TOR_DAEMON_VERSION
-source ./scripts/manifest.sh
-printf '%s\n' "$NION_APPIMAGE_BASENAME"
+chmod +x NiOn-1.3.0-x86_64.AppImage
+./NiOn-1.3.0-x86_64.AppImage
 ```
 
-Do not edit version strings in build scripts to make a release. Change the relevant one-line manifest value and run `./scripts/release-preflight.sh`.
-
-## AppImage
-
-NiOn 1.2.1 development builds continue to target **GNU/Linux x86_64** for the AppImage pipeline. Release-critical versions now come from `release/manifest/`.
-
-After building:
+If FUSE is unavailable:
 
 ```bash
-chmod +x dist/NiOn-1.2.1-x86_64.AppImage
-./dist/NiOn-1.2.1-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.3.0-x86_64.AppImage
 ```
-
-The AppImage contains NiOn, the Tor runtime, WebKitGTK subprocess executables, and practical user-space runtime dependencies. Host graphics drivers, glibc, and other host-core components are intentionally not replaced.
-
-See [APPIMAGE.md](APPIMAGE.md) for packaging details.
 
 ## Build from source
 
-On Debian/Ubuntu-family systems:
+On a Debian/Ubuntu-family x86_64 system:
 
 ```bash
 ./scripts/install-deps-debian.sh
@@ -93,233 +201,31 @@ rm -rf build
 ./scripts/run-dev.sh
 ```
 
-`run-dev.sh` prepares the verified bundled Tor runtime when it is not already present.
-
-For a release build without immediately launching NiOn:
+Build the production AppImage with:
 
 ```bash
-meson setup build --buildtype=release
-meson compile -C build
-```
-
-Full build documentation is in [BUILDING.md](BUILDING.md).
-
-## Build the AppImage
-
-```bash
-./scripts/install-deps-debian.sh
 ./scripts/build-appimage.sh
-./scripts/test-appimage.sh
-```
-
-Expected artifacts:
-
-```text
-dist/NiOn-1.2.1-x86_64.AppImage
-dist/NiOn-1.2.1-x86_64.AppImage.sha256
-```
-
-Run the stable release checks with:
-
-```bash
 ./scripts/release-preflight.sh
 ```
 
-The runtime scenarios are documented in [TESTING.md](TESTING.md).
-
-## Keyboard shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `Ctrl+T` | New tab |
-| `Ctrl+W` | Close tab |
-| `Ctrl+L` / `F6` | Focus address bar |
-| `Ctrl+F` | Find in page |
-| `Ctrl+R` / `F5` | Reload |
-| `Ctrl+Shift+R` | Reload without cache |
-| `Ctrl++` / `Ctrl+=` | Zoom in |
-| `Ctrl+-` | Zoom out |
-| `Ctrl+0` | Reset zoom to 100% and forget the current site override |
-| `F11` | Fullscreen |
-| `Alt+Left` | Back |
-| `Alt+Right` | Forward |
-| `Ctrl+Tab` / `Ctrl+PageDown` | Next tab |
-| `Ctrl+Shift+Tab` / `Ctrl+PageUp` | Previous tab |
-| `Ctrl+J` | Downloads |
-| `Ctrl+D` | Bookmark current page |
-
-## Persistent profile
-
-NiOn keeps its profile outside the executable/AppImage:
+Expected output:
 
 ```text
-~/.local/share/nion/
-├── cookies.sqlite
-├── session.ini
-├── downloads.ini
-├── bookmarks.ini
-├── tor-runtime.ini
-├── tor/
-└── WebKit website data...
-
-~/.cache/nion/
-└── WebKit cache...
-
-~/.config/nion/
-├── preferences.ini
-└── site-zoom.ini
+dist/NiOn-1.3.0-x86_64.AppImage
+dist/NiOn-1.3.0-x86_64.AppImage.sha256
 ```
 
-This layout is version-independent. Replacing an older NiOn AppImage with `NiOn-1.2.1-x86_64.AppImage` (or a later build) is designed to reuse the same profile. See [UPGRADING.md](UPGRADING.md).
+See [BUILDING.md](BUILDING.md) for the complete build/release procedure and [TESTING.md](TESTING.md) for runtime validation.
 
-Malformed NiOn-owned profile files, including the Stage 3 site-zoom store, are quarantined rather than silently overwritten when possible. An obviously invalid cookie database is also quarantined before WebKit opens it.
+## Documentation
 
-## Tor runtime
-
-NiOn pins a Tor Expert Bundle release and verifies its detached signature before preparing the development/package runtime. A system-installed Tor daemon is not required for normal NiOn operation.
-
-The Tor data directory is isolated from the system Tor configuration and NiOn dynamically selects an available local SOCKS port in its reserved range.
-
-See [TOR_RUNTIME.md](TOR_RUNTIME.md).
-
-## Privacy and security
-
-NiOn includes practical hardening such as:
-
-- WebRTC disabled;
-- DNS prefetching disabled;
-- camera, microphone, geolocation, and notification permission requests denied;
-- WebGL and WebAudio disabled;
-- local/private network navigation restrictions;
-- custom SOCKS proxy routing with no intentional direct fallback;
-- dead-loopback proxy replacement after Tor failure;
-- Tor-side internal-address rejection;
-- WebKit activity/download cancellation when the Tor child fails.
-
-For the threat model, limitations, and network test procedure, read [PRIVACY.md](PRIVACY.md).
-
-Run a live socket audit while loading clearnet and `.onion` pages:
-
-```bash
-./scripts/audit-network.sh 30
-```
-
-A passing sample is useful evidence, not a mathematical proof that every possible browser/network leak has been eliminated.
-
-## Onion-Location
-
-When an HTTPS clearnet page advertises a valid Tor v3 onion URL using Onion-Location, NiOn shows an **Onion** badge. Clicking it opens the advertised `.onion` address inside NiOn in a new tab.
-
-## Site & connection information
-
-NiOn 1.2.0 Stage 4 adds an information button beside the Onion-Location badge. For the active web page, its popover reports:
-
-- the normalized host (and a non-default port when present);
-- the website connection type, including HTTPS/TLS state or Onion Service transport;
-- whether NiOn's bundled Tor route is currently ready;
-- mixed-content state for secure HTTPS pages;
-- the complete current address, which can be selected and copied.
-
-HTTPS certificate errors remain fail-closed. NiOn explicitly configures the WebKit network session to fail on TLS errors instead of weakening certificate verification for the information UI.
-
-For HTTPS pages, NiOn listens for WebKit insecure-content events. If insecure displayed content, insecure active content, or another insecure-content event is reported, the information button changes to a warning icon and NiOn shows a mixed-content warning in the status bar. The warning is per navigation and is cleared when a new load starts.
-
-For a plain-HTTP `.onion` page, the popover describes the Onion Service connection separately and does not mislabel it as HTTPS; HTTPS-style mixed-content checking is marked not applicable.
-
-
-## Bookmarks
-
-NiOn 1.1.0 keeps bookmarks intentionally simple and local. Press `Ctrl+D` or click the bookmark button beside the address bar.
-
-The toolbar button reflects the current page automatically:
-
-- `☆` means the current page is not bookmarked;
-- `★` means its exact URL already exists in `bookmarks.ini`;
-- clicking the button toggles the bookmark;
-- New Tab, blank pages, and internal error pages keep the button disabled.
-
-Open **Bookmarks** from the hamburger menu to open, rename, delete, or search saved entries. **Search by title or URL** filters the local list live; matching is case-insensitive and multiple search terms must all match the bookmark title or URL. Start typing while the Bookmarks window is active and the native GTK search field captures the query. Closing the window clears the temporary search so the next open starts with the full list.
-
-Bookmarks are stored locally in `~/.local/share/nion/bookmarks.ini`. Duplicate URLs are not added twice, and bookmarks do not sync to any cloud service.
-
-## Tab audio & mute
-
-When a tab is playing audio, NiOn shows a compact speaker button in that tab. Click it to mute/unmute only that WebView. The icon follows WebKit's `is-muted` state, while visibility follows `is-playing-audio`. A muted state is saved with NiOn session restore so it does not leak into unrelated tabs.
-
-## Clear Data for This Site
-
-NiOn 1.1.0 Stage 3 adds **Menu → Clear Data for This Site…**.
-
-For the current HTTP(S) site, NiOn asks WebKit for stored website-data records attributed to that host/domain and removes only the matching records. This can include cookies, cache, local/session storage, IndexedDB, and other WebKit website data. The active page is reloaded without cache after a successful clear so sign-out/storage changes are immediately visible.
-
-WebKit may group related subdomains under a parent domain, so the confirmation dialog identifies the current site before anything is removed. The existing **Clear Browsing Data…** command remains available for a full-profile website-data clear.
-
-## Downloads
-
-Downloads use the same Tor-proxied `WebKitNetworkSession` as browsing. NiOn provides:
-
-- progress and cancellation;
-- filename collision handling;
-- failed/interrupted status;
-- persistent download history;
-- `Ctrl+J` Downloads window;
-- a compact per-item **⋮** menu;
-- **Open File** for completed files still present on disk;
-- **Open Containing Folder** using the desktop's registered local file handler;
-- **Copy Download Link** from the stored source request URI;
-- **Retry Failed Download** through the active NiOn WebView and its Tor-proxied WebKit network session;
-- Clear Downloads without deleting completed files.
-
-Stage 5 stores the bounded source request URI with completed/failed download history so Copy Link and Retry can remain available after a restart. Older `downloads.ini` entries without a source URI remain valid; they simply do not offer source-dependent actions. Retry is only offered for a genuine **Failed** entry, not a user-cancelled download, and is blocked while bundled Tor is unavailable.
-
-## Search engines
-
-The Preferences dialog supports:
-
-- DuckDuckGo;
-- Brave Search;
-- Startpage.
-
-The preference is stored in the NiOn configuration directory.
-
-## Repository layout
-
-```text
-.
-├── src/                 NiOn C source
-├── data/                icon, desktop file, AppStream, GResource
-├── packaging/           AppImage launcher and WebKit exec shim
-├── runtime/             runtime documentation; downloaded Tor is ignored
-├── scripts/             build, audit, test and packaging scripts
-├── .github/workflows/   CI/release automation
-├── BUILDING.md
-├── PRIVACY.md
-├── TOR_RUNTIME.md
-├── APPIMAGE.md
-├── TESTING.md
-├── UPGRADING.md
-├── CHANGELOG.md
-└── LICENSE
-```
-
-## GitHub release
-
-The repository includes a release workflow. Pushing a tag that matches the manifest, such as `v1.2.1`, builds the x86_64 AppImage on GitHub Actions and attaches the manifest-derived AppImage plus SHA-256 file. A mismatched tag is rejected before release.
-
-Release notes are prepared in [GITHUB_RELEASE.md](GITHUB_RELEASE.md).
-
-## Project status
-
-**1.1.0 Stable** extends the first stable release with HTTPS-First warnings, simple bookmarks, per-site data clearing, and tab audio controls. Future releases should prioritize bug fixes, compatibility, privacy/reliability work, and carefully scoped improvements rather than turning NiOn into a feature-heavy general-purpose browser.
+- [BUILDING.md](BUILDING.md) — source build, AppImage build, manifest, and manual release flow.
+- [TESTING.md](TESTING.md) — regression, runtime, Tor, private-session, and AppImage checks.
+- [PRIVACY.md](PRIVACY.md) — privacy model, persistence boundaries, and known limitations.
+- [SECURITY.md](SECURITY.md) — security-reporting scope.
+- [CHANGELOG.md](CHANGELOG.md) — release history.
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — bundled/runtime component notices.
 
 ## License
 
-NiOn source code is licensed under the **GNU General Public License v3.0 or later (GPL-3.0-or-later)**. See [LICENSE](LICENSE).
-
-NiOn bundles or interfaces with third-party software under their respective licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## Author
-
-**Jeannes Bryan**
-
-Repository: `https://github.com/jeannesbryan/nion`
+NiOn source code is licensed under **GPL-3.0-or-later**. Bundled third-party components retain their own upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

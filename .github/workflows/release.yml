@@ -87,6 +87,6 @@ jobs:
             gh release upload "$TAG" "${assets[@]}" --clobber
           else
             gh release create "$TAG" "${assets[@]}" \
-              --title "NiOn $NION_VERSION — Maintenance" \
-              --notes-file GITHUB_RELEASE.md
+              --title "NiOn $NION_VERSION" \
+              --generate-notes
           fi

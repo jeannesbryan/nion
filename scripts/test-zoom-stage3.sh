@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/src/main.c"
 README="$ROOT/README.md"
-ROADMAP="$ROOT/ROADMAP.md"
 CHANGELOG="$ROOT/CHANGELOG.md"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -44,10 +43,8 @@ home_resets=$(grep -c 'webkit_web_view_set_zoom_level(tab->web_view, 1.0)' "$SRC
 (( home_resets >= 2 )) || fail "Home/error pages are not explicitly reset to 100%"
 pass "internal pages reset to 100%"
 
-grep -q 'Per-site zoom memory:' "$README" \
-  || fail "README no longer documents Stage 3 per-site zoom"
-grep -q 'Stage 3 — Per-Site Zoom Memory ✅' "$ROADMAP" \
-  || fail "ROADMAP does not mark Stage 3 complete"
+grep -q 'Per-site zoom memory with' "$README" \
+  || fail "README per-site zoom documentation missing"
 grep -q 'Stage 3: Per-Site Zoom Memory' "$CHANGELOG" \
   || fail "CHANGELOG Stage 3 entry missing"
 pass "Stage 3 documentation"

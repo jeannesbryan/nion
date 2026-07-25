@@ -10,7 +10,7 @@ pass() { printf 'PASS  %s\n' "$*"; }
 warn() { printf 'WARN  %s\n' "$*"; }
 failmsg() { printf 'FAIL  %s\n' "$*" >&2; fail=1; }
 
-printf 'NiOn %s development/release preflight\n\n' "$VERSION"
+printf 'NiOn %s release preflight\n\n' "$VERSION"
 
 for tool in bash grep awk sed find stat sha256sum python3; do
   command -v "$tool" >/dev/null 2>&1 && pass "tool: $tool" || failmsg "missing tool: $tool"
@@ -28,12 +28,13 @@ fi
 printf '\n== Release metadata ==\n'
 grep -Fq "version: files('release/manifest/NION_VERSION')" meson.build && pass 'Meson reads canonical version file' || failmsg 'Meson version source mismatch'
 grep -Fq '@NION_VERSION@' data/io.github.jeannesbryan.Nion.metainfo.xml.in && pass 'AppStream version is generated' || failmsg 'AppStream version placeholder missing'
-grep -Fq "Current development: $VERSION" README.md && pass 'README version' || failmsg 'README version mismatch'
+grep -Fq "Stable release: $VERSION" README.md && pass 'README stable version' || failmsg 'README stable version mismatch'
 grep -q '<project_license>GPL-3.0-or-later</project_license>' data/io.github.jeannesbryan.Nion.metainfo.xml.in && pass 'AppStream project license' || failmsg 'AppStream project license missing'
 [[ -s LICENSE ]] && pass 'LICENSE present' || failmsg 'LICENSE missing'
 [[ -s .gitignore ]] && pass '.gitignore present' || failmsg '.gitignore missing'
-[[ -s GITHUB_RELEASE.md ]] && pass 'GitHub release notes present' || failmsg 'GitHub release notes missing'
-[[ -s UPGRADING.md ]] && pass 'upgrade documentation present' || failmsg 'upgrade documentation missing'
+[[ "$NION_RELEASE_STATUS" == 'Stable' ]] && pass 'release status is Stable' || failmsg 'release status is not Stable'
+[[ "$NION_APPSTREAM_RELEASE_TYPE" == 'stable' ]] && pass 'AppStream release type is stable' || failmsg 'AppStream release type is not stable'
+[[ -s BUILDING.md && -s TESTING.md && -s PRIVACY.md ]] && pass 'core documentation present' || failmsg 'core documentation missing'
 
 printf '\n== Script/XML sanity ==\n'
 for script in scripts/*.sh packaging/AppRun; do
@@ -81,7 +82,15 @@ for test in \
   scripts/test-zoom-stage3.sh \
   scripts/test-site-info-stage4.sh \
   scripts/test-downloads-stage5.sh \
-  scripts/test-bookmark-search-stage6.sh; do
+  scripts/test-bookmark-search-stage6.sh \
+  scripts/test-pinned-tabs-stage1.sh \
+  scripts/test-private-window-stage2.sh \
+  scripts/test-private-downloads-stage3.sh \
+  scripts/test-private-session-audit-stage4.sh \
+  scripts/test-new-window-related-view.sh \
+  scripts/test-context-menu-ownership.sh \
+  scripts/test-context-menu-gtk4-signature.sh \
+  scripts/test-docs-stage5.sh; do
   if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
 done
 

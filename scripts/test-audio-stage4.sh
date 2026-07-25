@@ -21,7 +21,7 @@ if grep -q 'g_menu_append(menu, "Bookmark This Page"' "$SRC"; then
     fail "Bookmark This Page still present in hamburger menu"
 fi
 grep -q '"bookmark-page", action_bookmark_page' "$SRC" || fail "Ctrl+D bookmark action unexpectedly removed"
-grep -q 'app.bookmark-page' "$SRC" || fail "Ctrl+D accelerator target missing"
+grep -Eq '(app|win)\.bookmark-page' "$SRC" || fail "Ctrl+D accelerator target missing"
 
 pass "tab audio indicator wiring"
 pass "per-tab mute toggle"

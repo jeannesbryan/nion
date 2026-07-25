@@ -1,25 +1,48 @@
-# Building NiOn 1.2.1
+# Building NiOn
 
-## Supported production target
+NiOn 1.3.0 targets GNU/Linux x86_64 for its production AppImage.
 
-The 1.2.1 production AppImage pipeline targets GNU/Linux x86_64.
+## Requirements
 
-## Debian / Ubuntu dependencies
+On Debian/Ubuntu-family systems:
 
 ```bash
 ./scripts/install-deps-debian.sh
 ```
 
-The script installs the compiler/build stack, GTK 4 development files, WebKitGTK 6 development files, libsoup 3, AppStream/desktop validation tools, Tor-runtime verification tools, and WebKit sandbox helpers.
+This installs the compiler/build stack, GTK 4 and WebKitGTK 6 development files, libsoup 3, AppStream/desktop validators, WebKit sandbox helpers, and tools used to verify/download the bundled Tor runtime and AppImage tooling.
 
-## Native development build
+A system Tor package is not required.
+
+## Release manifest
+
+Release-critical values live in `release/manifest/`.
+
+```bash
+source ./scripts/manifest.sh
+printf 'NiOn: %s\nTor: %s\nExpert Bundle: %s\nAppImage: %s\n' \
+  "$NION_VERSION" \
+  "$NION_TOR_DAEMON_VERSION" \
+  "$NION_TOR_BROWSER_VERSION" \
+  "$NION_APPIMAGE_BASENAME"
+```
+
+For 1.3.0 the expected AppImage name is:
+
+```text
+NiOn-1.3.0-x86_64.AppImage
+```
+
+Do not hard-code a release version into build/package scripts. Update the appropriate one-line manifest value instead.
+
+## Development build
 
 ```bash
 rm -rf build
 ./scripts/run-dev.sh
 ```
 
-`run-dev.sh` will prepare the pinned signed Tor Expert Bundle if `runtime/tor/` has not been prepared yet, compile NiOn, and launch it.
+`run-dev.sh` prepares/validates the pinned signed Tor Expert Bundle when necessary, builds NiOn in debug mode, and launches it.
 
 ## Native release build
 
@@ -29,73 +52,145 @@ meson setup build --buildtype=release
 meson compile -C build
 ```
 
-Binary:
+Result:
 
 ```text
 build/nion
 ```
 
-## Release manifest
+## Build the AppImage
 
-Before building, inspect the canonical values:
-
-```bash
-source ./scripts/manifest.sh
-printf 'NiOn %s\nTor %s / Expert Bundle %s\nOutput %s\n' \
-  "$NION_VERSION" "$NION_TOR_DAEMON_VERSION" "$NION_TOR_BROWSER_VERSION" "$NION_APPIMAGE_BASENAME"
-```
-
-Meson reads `release/manifest/NION_VERSION` directly and generates the C version macros plus AppStream metadata from the same manifest.
-
-## Production AppImage
+The normal production flow is:
 
 ```bash
+./scripts/install-deps-debian.sh
 ./scripts/build-appimage.sh
+./scripts/release-preflight.sh
 ```
 
-The builder:
+`build-appimage.sh` performs the following:
 
-1. verifies/prepares the pinned Tor Expert Bundle;
-2. compiles NiOn in release mode;
-3. creates the final AppDir;
-4. bundles Tor;
-5. finds and bundles WebKitGTK subprocess executables;
-6. deploys practical recursive user-space ELF dependencies;
-7. copies GIO modules and WebKit data where needed;
-8. installs desktop/AppStream/icon metadata;
-9. installs project license/notices;
-10. runs AppDir diagnostics;
-11. builds the AppImage with `appimagetool`;
-12. generates SHA-256;
-13. runs packaged diagnostics.
+1. loads the centralized release manifest;
+2. verifies/prepares the pinned Tor Expert Bundle;
+3. builds NiOn in release mode;
+4. creates `NiOn.AppDir`;
+5. installs the bundled Tor runtime;
+6. copies the WebKitGTK web/network/GPU subprocess executables available on the build host;
+7. builds the NiOn WebKit subprocess path shim;
+8. deploys practical recursive user-space ELF dependencies;
+9. copies required WebKit/GIO runtime data where available;
+10. installs desktop, icon, AppStream, license, README, manifest, and build-provenance metadata;
+11. validates the AppDir;
+12. obtains `appimagetool` when no explicit `APPIMAGETOOL` is supplied;
+13. creates the AppImage;
+14. generates SHA-256;
+15. runs a FUSE-independent packaged diagnostic.
 
-Expected output:
+Expected artifacts:
 
 ```text
-dist/NiOn-1.2.1-x86_64.AppImage
-dist/NiOn-1.2.1-x86_64.AppImage.sha256
+dist/NiOn-1.3.0-x86_64.AppImage
+dist/NiOn-1.3.0-x86_64.AppImage.sha256
 ```
 
-## Validate
+The AppImage intentionally does not replace host-core components such as the kernel, glibc base environment, or graphics-driver stack.
+
+## Verify the artifact
+
+```bash
+cd dist
+sha256sum -c NiOn-1.3.0-x86_64.AppImage.sha256
+```
+
+Expected:
+
+```text
+NiOn-1.3.0-x86_64.AppImage: OK
+```
+
+Run it:
+
+```bash
+chmod +x NiOn-1.3.0-x86_64.AppImage
+./NiOn-1.3.0-x86_64.AppImage
+```
+
+Without FUSE:
+
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.3.0-x86_64.AppImage
+```
+
+## Preflight and runtime validation
+
+Run the static/release checks:
 
 ```bash
 ./scripts/release-preflight.sh
-./scripts/test-appimage.sh
 ```
 
-Then perform the live scenarios in `TESTING.md` and the runtime network audit:
+Then run the packaged diagnostic explicitly:
+
+```bash
+./scripts/test-appimage.sh dist/NiOn-1.3.0-x86_64.AppImage
+```
+
+Finally complete the live scenarios in `TESTING.md`, including Tor failure/recovery, normal/private persistence separation, downloads, context menus/new-window links, and the network audit.
 
 ```bash
 ./scripts/audit-network.sh 30
 ```
 
-## GitHub release build
+## Bundled Tor
 
-The repository includes `.github/workflows/release.yml`. For the 1.2.1 release:
+The Tor runtime is prepared by:
 
 ```bash
-git tag -a v1.2.1 -m "NiOn 1.2.1"
-git push origin v1.2.1
+./scripts/fetch-tor-runtime.sh
 ```
 
-The workflow loads `release/manifest/`, rejects a tag that does not equal `v$NION_VERSION`, builds and validates the x86_64 AppImage, then creates/updates the corresponding GitHub release with the manifest-derived AppImage and SHA-256 asset.
+The fetcher verifies the pinned Expert Bundle using the release-manifest signing fingerprint and records runtime provenance in `runtime/tor/MANIFEST.ini`.
+
+NiOn uses its own Tor data directory and chooses a local SOCKS endpoint for the runtime. If the Tor child fails, browser web navigation is blocked and WebKit is moved to a dead loopback SOCKS endpoint rather than intentionally falling back to a direct connection.
+
+## AppImage profile behavior
+
+The normal browser profile is outside the AppImage:
+
+```text
+~/.local/share/nion/
+~/.config/nion/
+~/.cache/nion/
+```
+
+Therefore replacing the AppImage normally keeps normal cookies, site data, bookmarks, session state, downloads history, preferences, zoom state, and Tor client state.
+
+Private Window browsing/session/download history is intentionally not persisted into those normal stores.
+
+## Manual GitHub release
+
+NiOn's preferred release flow is manual after local validation.
+
+1. Build and test the AppImage.
+2. Verify its SHA-256 file.
+3. Commit/push the final source.
+4. Create tag `v1.3.0` in GitHub.
+5. Create a GitHub Release for `v1.3.0`.
+6. Upload:
+
+```text
+NiOn-1.3.0-x86_64.AppImage
+NiOn-1.3.0-x86_64.AppImage.sha256
+```
+
+The repository's GitHub Actions workflow remains optional; the locally validated AppImage is the intended primary release artifact.
+
+## Source archive
+
+A manifest-derived source archive can be created with:
+
+```bash
+./scripts/make-source-archive.sh
+```
+
+The archive includes `release/manifest/` so release metadata remains reproducible from the source package.

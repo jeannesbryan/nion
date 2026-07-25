@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/src/main.c"
 README="$ROOT/README.md"
-ROADMAP="$ROOT/ROADMAP.md"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -43,8 +42,7 @@ grep -q 'WEBKIT_WEBSITE_DATA_ALL' "$SRC" || fail "site data type coverage missin
 grep -q 'webkit_web_view_reload_bypass_cache' "$SRC" || fail "post-clear cache-bypass reload missing"
 grep -q 'Clear Browsing Data…' "$SRC" || fail "global clear-data action was lost"
 
-grep -Eq '(Current development: 1\.2\.[01]|Current release: 1\.1\.0 Stable|Stage [34] \((Clear Data for This Site|Tab Audio Indicator & Mute)\))' "$README" || fail "README does not identify a Stage 3+ / stable 1.1.0 build"
-grep -q 'Stage 3 — Clear Data for This Site ✅' "$ROADMAP" || fail "ROADMAP Stage 3 not complete"
+grep -q 'Clear Data for This Site' "$README" || fail "README lost Clear Data for This Site documentation"
 
 pass "Bookmark toolbar + per-site data clearing source invariants"
 echo "STAGE 3 STATIC CHECK: PASS"

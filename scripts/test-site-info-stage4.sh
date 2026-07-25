@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/src/main.c"
 README="$ROOT/README.md"
-ROADMAP="$ROOT/ROADMAP.md"
 CHANGELOG="$ROOT/CHANGELOG.md"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -54,10 +53,8 @@ grep -q 'is_onion ? "Onion site information" : "Site information"' "$SRC" \
   || fail "onion connection distinction missing"
 pass "onion connection distinction"
 
-grep -q 'Site & connection information' "$README" \
-  || fail "README no longer documents Stage 4 site information"
-grep -q 'Stage 4 — Site & Connection Information + Mixed Content Detection ✅' "$ROADMAP" \
-  || fail "ROADMAP does not mark Stage 4 complete"
+grep -q '^### Site and connection information' "$README" \
+  || fail "README site information documentation missing"
 grep -q 'Stage 4: Site & Connection Information' "$CHANGELOG" \
   || fail "CHANGELOG Stage 4 entry missing"
 pass "Stage 4 documentation"

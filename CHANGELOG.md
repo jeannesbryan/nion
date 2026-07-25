@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.0 — 2026-07-26
+
+### Tabs & Private Browsing
+
+- Added pinned tabs with a dedicated left-side block, session persistence, bulk-close protection, closed-tab recovery, and a visible `📌` marker.
+- Added **New Private Window** (`Ctrl+Shift+P`) backed by a dedicated ephemeral WebKit network session while continuing to use NiOn's shared bundled Tor runtime and fail-closed routing.
+- Private Window does not persist cookies/site data, WebKit credentials, tab/session restore, pinned state, per-site zoom, private download history, or private recently-closed tabs after the window closes.
+- Bookmarks and the selected search engine remain intentionally global between normal and private windows.
+- Added private download handling: history/source URLs stay memory-only, desktop completion notifications are suppressed, active downloads are cancelled on Private Window close/Tor failure, and tracked partial files are cleaned where possible. Completed files intentionally remain on disk.
+- Closing an individual private tab requires confirmation; private bulk-close actions use a single confirmation.
+- Added runtime verification that the private WebKit session is truly ephemeral and that persistent credential storage is disabled; Private Window creation fails closed if those invariants are not met.
+- Expanded **Privacy & Leak Audit** to report private-session persistence boundaries and intentional user-export/global exceptions.
+
+### Runtime fixes
+
+- Fixed `target="_blank"`, `window.open()`, and related new-view handling for WebKitGTK 6 by constructing popup WebViews with the `related-view` property while preserving opener settings/content policies.
+- Fixed page-context-menu crashes on WebKitGTK 6 / GTK4 by using the current `context-menu` signal signature without the removed `GdkEvent` parameter.
+- Corrected context-menu ownership handling so NiOn does not free WebKit-owned menu lists and manages custom menu-item references safely.
+- Added regression checks for related-view handling, context-menu ownership, and the GTK4/WebKitGTK 6 context-menu callback signature.
+
+### Documentation and release cleanup
+
+- Promoted 1.3.0 to Stable release metadata and AppStream `stable` status.
+- Reworked `README.md` to focus on NiOn as a product: features, capabilities, privacy model, strengths, limitations, shortcuts, profile behavior, and concise run/build guidance.
+- Consolidated AppImage, Tor-runtime, upgrade, repository, and release-process guidance into the remaining core documentation.
+- Removed obsolete/duplicative Markdown files and made historical feature tests independent of `ROADMAP.md`.
+- Kept the centralized `release/manifest/` as the single source of truth for NiOn/Tor/AppImage release-critical values.
+
 ## 1.2.1 — Version & Dependency Manifest
 
 - Added `release/manifest/` as the canonical source for NiOn release version, AppImage architecture, bundled Tor pins, release status, and minimum GTK/WebKitGTK versions.
@@ -221,3 +249,8 @@
 
 - Bundled Tor Expert Bundle runtime lifecycle.
 - Added runtime repair to avoid loading debug-symbol objects as shared libraries.
+
+### 1.3.0 Stage 1 Fix 4
+- Fixed the remaining immediate crash when opening a web-page context menu on WebKitGTK 6 / GTK4.
+- Corrected the `WebKitWebView::context-menu` callback signature by removing the GTK3-era `GdkEvent` parameter. On WebKitGTK 6 that extra argument shifted `hit_test_result` and `user_data`, allowing an invalid `NionTab` pointer to be dereferenced.
+- Added a regression guard for the WebKitGTK 6 signal signature.

@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/src/main.c"
 README="$ROOT/README.md"
-ROADMAP="$ROOT/ROADMAP.md"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -44,11 +43,9 @@ grep -q 'Print / Save as PDF…' "$SRC" \
   || fail "Print / Save as PDF label missing"
 pass "Print / Save as PDF UI"
 
-grep -q 'Stage 2 — Page Actions: Better Web Page Context Menu + Print / Save as PDF ✅' "$ROADMAP" \
-  || fail "ROADMAP does not mark Stage 2 complete"
-grep -q 'Current development:' "$README" \
-  || fail "README current development marker missing"
-grep -q 'Improved page context menu' "$README" \
+grep -q 'Stable release: 1.3.0' "$README" \
+  || fail "README stable release marker missing"
+grep -q 'Better web-page context menu' "$README" \
   || fail "README page context-menu documentation missing"
 grep -q 'Print / Save as PDF' "$README" \
   || fail "README print/PDF documentation missing"

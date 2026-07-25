@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/src/main.c"
-ROADMAP="$ROOT/ROADMAP.md"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -33,7 +32,6 @@ grep -q 'GDK_BUTTON_SECONDARY' "$SRC" || fail "secondary-click tab gesture missi
 grep -q 'gtk_popover_popup' "$SRC" || fail "tab context popover missing"
 grep -q 'gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) == 1' "$SRC" || fail "last-tab keepalive guard missing"
 grep -q 'nion_new_tab(app, NULL, TRUE)' "$SRC" || fail "last-tab replacement New Tab missing"
-grep -q 'Stage 1 — Tab Recovery & Tab Context Menu ✅' "$ROADMAP" || fail "roadmap Stage 1 not complete"
 
 pass "bounded recent closed-tab recovery"
 pass "Ctrl+Shift+T action"
