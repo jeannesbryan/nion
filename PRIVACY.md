@@ -42,9 +42,9 @@ Typical persistent locations:
   WebKit cache...
 ```
 
-This means normal browsing can leave local evidence such as cookies, site data, bookmarks, tab/session URLs, download history, per-site zoom keys, and cached browser data.
+This means normal browsing can leave local evidence such as cookies, site data, bookmarks, tab/session URLs, download history, per-site zoom keys, per-site JavaScript rules, and cached browser data.
 
-Use **Clear Data for This Site…** or **Clear Browsing Data…** when that persistence is not desired.
+Use **Clear Data for This Site…** or **Browsing Data…** when that persistence is not desired.
 
 ## Private Window
 
@@ -94,13 +94,13 @@ NiOn cannot truthfully erase those external artifacts merely by closing Private 
 
 NiOn currently applies practical restrictions including:
 
-- WebRTC disabled;
+- WebRTC peer connections disabled;
 - DNS prefetching disabled;
 - hyperlink auditing disabled;
-- camera permission denied;
-- microphone permission denied;
-- geolocation permission denied;
-- notification permission denied;
+- camera and microphone blocked by default, with explicit per-origin temporary grants;
+- geolocation blocked by default, with an explicit per-origin temporary grant and a warning that physical location can defeat network anonymity;
+- notifications blocked by default, with an explicit per-origin temporary grant and a warning that the desktop environment may retain notification artifacts;
+- screen/display capture and other unscoped permission classes remain denied;
 - WebGL disabled;
 - WebAudio disabled;
 - local/private network navigation restrictions;
@@ -124,6 +124,18 @@ When a clearnet HTTPS page advertises a valid Tor v3 Onion-Location, NiOn can ex
 Bookmarks are stored locally in `~/.local/share/nion/bookmarks.ini`.
 
 Bookmark search is performed locally/in memory against stored titles and URLs. NiOn does not send the search query to a website or search engine merely to filter the bookmark list.
+
+## Per-site JavaScript
+
+Normal browsing stores only explicit **disabled** JavaScript site rules in `~/.config/nion/site-javascript.ini`. The store is bounded, written atomically, and can reveal hostnames for which JavaScript was disabled.
+
+Private Window does not read the normal JavaScript-rule file. Private JavaScript changes are held only in memory for that Private Window. JavaScript changes reload the current page so the selected rule applies from the start of the next document load.
+
+## Temporary site permissions
+
+Camera, microphone, geolocation, and notification requests are blocked by default. NiOn can grant a supported request only after an explicit **Allow temporarily** decision. The grant is scoped to the requesting origin and current NiOn window and is not written to the profile.
+
+WebRTC peer connections remain disabled even when camera or microphone capture is temporarily allowed. Resetting temporary permissions from Site Information removes the current origin's grants and stops camera/microphone capture in matching tabs. A site that receives geolocation or media access can learn sensitive information despite Tor routing, and desktop notifications may leave artifacts outside NiOn.
 
 ## Per-site zoom
 
@@ -172,3 +184,16 @@ A successful test is evidence for the tested build/environment; it is not a proo
 NiOn aims to provide a minimal Tor-only browsing path with practical fail-closed safeguards. It does not attempt to reproduce Tor Browser's full fingerprinting defenses, security patches, browser configuration, circuit/isolation model, or anonymity research.
 
 For high-risk anonymity use cases, NiOn should not be assumed equivalent to Tor Browser.
+
+
+## Crash recovery boundary
+
+Normal-window session snapshots contain URLs and bounded WebKit session state. After an unclean shutdown NiOn requires an explicit **Restore Tabs** or **Start Fresh** choice and skips opaque WebKit session-state blobs during the initial recovery setup. This is a reliability safeguard against automatic restore loops; it is not an anonymity feature. Private Window state is never included in normal crash recovery.
+
+## Browsing Data Manager
+
+The normal profile can selectively clear WebKit website data/cache, saved per-site zoom, persistent per-site JavaScript rules, and temporary permission grants. Temporary permission clearing also stops active camera/microphone capture. In Private Window, site JavaScript rules and permission grants are memory-only; clearing them does not write them into the normal profile.
+
+## 1.4.0 final audit note
+
+The 1.4.0 finalization rechecks the interaction between temporary site permissions, per-site JavaScript rules, crash recovery, selective data clearing, normal/private persistence boundaries, and Tor fail-closed behavior. The audit is a regression safeguard for this implementation; it does not upgrade NiOn's threat-model claim to Tor Browser equivalence.

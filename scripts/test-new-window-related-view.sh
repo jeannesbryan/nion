@@ -13,8 +13,15 @@ if grep -q 'webkit_web_view_new_with_related_view' "$SRC"; then
     fail 'removed WebKitGTK 6 constructor webkit_web_view_new_with_related_view is still used'
 fi
 
-grep -q '"settings", webkit_web_view_get_settings(related_view)' "$SRC" || \
-    fail 'popup does not preserve opener WebKit settings'
+# Per-site JavaScript requires mutable settings to be tab-local. Keep the
+# related-view lifecycle/session relationship, but use a fresh hardened settings
+# object seeded with the opener's current JavaScript state.
+grep -q 'WebKitSettings \*settings = webkit_settings_new();' "$SRC" || \
+    fail 'popup does not create independent hardened WebKit settings'
+grep -q 'webkit_settings_get_enable_javascript(webkit_web_view_get_settings(related_view))' "$SRC" || \
+    fail 'popup does not seed JavaScript state from opener'
+grep -q '"settings", settings' "$SRC" || \
+    fail 'popup independent settings are not attached'
 grep -q '"user-content-manager", webkit_web_view_get_user_content_manager(related_view)' "$SRC" || \
     fail 'popup does not preserve opener user-content manager'
 grep -q '"website-policies", webkit_web_view_get_website_policies(related_view)' "$SRC" || \

@@ -40,7 +40,7 @@ grep -q 'webkit_website_data_get_name' "$SRC" || fail "website-data host matchin
 grep -q 'webkit_website_data_manager_remove' "$SRC" || fail "website-data remove missing"
 grep -q 'WEBKIT_WEBSITE_DATA_ALL' "$SRC" || fail "site data type coverage missing"
 grep -q 'webkit_web_view_reload_bypass_cache' "$SRC" || fail "post-clear cache-bypass reload missing"
-grep -q 'Clear Browsing Data…' "$SRC" || fail "global clear-data action was lost"
+grep -q 'win.clear-data' "$SRC" || fail "global browsing-data action was lost"
 
 grep -q 'Clear Data for This Site' "$README" || fail "README lost Clear Data for This Site documentation"
 

@@ -28,12 +28,19 @@ fi
 printf '\n== Release metadata ==\n'
 grep -Fq "version: files('release/manifest/NION_VERSION')" meson.build && pass 'Meson reads canonical version file' || failmsg 'Meson version source mismatch'
 grep -Fq '@NION_VERSION@' data/io.github.jeannesbryan.Nion.metainfo.xml.in && pass 'AppStream version is generated' || failmsg 'AppStream version placeholder missing'
-grep -Fq "Stable release: $VERSION" README.md && pass 'README stable version' || failmsg 'README stable version mismatch'
+if [[ "$NION_RELEASE_STATUS" == 'Stable' ]]; then
+  grep -Fq "Stable release: $VERSION" README.md && pass 'README stable version' || failmsg 'README stable version mismatch'
+else
+  grep -Fq "Current development: $VERSION" README.md && pass 'README development version' || failmsg 'README development version mismatch'
+fi
 grep -q '<project_license>GPL-3.0-or-later</project_license>' data/io.github.jeannesbryan.Nion.metainfo.xml.in && pass 'AppStream project license' || failmsg 'AppStream project license missing'
 [[ -s LICENSE ]] && pass 'LICENSE present' || failmsg 'LICENSE missing'
 [[ -s .gitignore ]] && pass '.gitignore present' || failmsg '.gitignore missing'
-[[ "$NION_RELEASE_STATUS" == 'Stable' ]] && pass 'release status is Stable' || failmsg 'release status is not Stable'
-[[ "$NION_APPSTREAM_RELEASE_TYPE" == 'stable' ]] && pass 'AppStream release type is stable' || failmsg 'AppStream release type is not stable'
+if [[ "$NION_RELEASE_STATUS" == 'Stable' ]]; then
+  [[ "$NION_APPSTREAM_RELEASE_TYPE" == 'stable' ]] && pass 'stable release metadata aligned' || failmsg 'Stable release requires stable AppStream type'
+else
+  [[ "$NION_APPSTREAM_RELEASE_TYPE" == 'development' ]] && pass 'development release metadata aligned' || failmsg 'Development release requires development AppStream type'
+fi
 [[ -s BUILDING.md && -s TESTING.md && -s PRIVACY.md ]] && pass 'core documentation present' || failmsg 'core documentation missing'
 
 printf '\n== Script/XML sanity ==\n'
@@ -90,7 +97,10 @@ for test in \
   scripts/test-new-window-related-view.sh \
   scripts/test-context-menu-ownership.sh \
   scripts/test-context-menu-gtk4-signature.sh \
-  scripts/test-docs-stage5.sh; do
+  scripts/test-docs-stage5.sh \
+  scripts/test-site-controls-stage1.sh \
+  scripts/test-recovery-data-stage2.sh \
+  scripts/test-hardening-stage3.sh; do
   if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
 done
 

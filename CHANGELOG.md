@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.4.0 — 2026-07-26
+
+### Site Controls
+
+- Upgraded the existing deny-all permission handler into an explicit privacy-first gate for camera, microphone, geolocation, and notifications. Supported permissions remain blocked by default and can be allowed temporarily per origin for the lifetime of the current NiOn window; grants are never written to disk.
+- Kept WebRTC peer connections disabled while allowing MediaStream permission requests to reach NiOn's camera/microphone gate. Screen/display capture and unscoped permission classes remain blocked.
+- Added per-site JavaScript enable/disable controls to Site Information. Normal rules persist in bounded `~/.config/nion/site-javascript.ini`; Private Window rules are memory-only and never read the normal rule store.
+- Added Site Information permission status rows and a reset action that revokes temporary grants and stops matching camera/microphone capture.
+- Permission grants are revalidated against the requesting origin and Tor-ready state before approval; Tor failure revokes temporary grants and stops active capture.
+
+### Recovery & Data Controls
+
+- Added explicit unclean-shutdown recovery with **Restore Tabs** and **Start Fresh** choices. Unclean sessions are never auto-navigated before the user decides.
+- Unclean recovery deliberately skips opaque WebKit session-state blobs and rebuilds from bounded URL/tab metadata first, reducing startup crash-loop risk while retaining malformed/oversized session quarantine.
+- Upgraded the former all-or-nothing global clear into **Browsing Data…**, with selective clearing for cookies/site storage, Web cache, saved zoom, per-site JavaScript rules, and temporary permissions.
+- Kept **Clear Data for This Site…** as the narrower per-site operation and provided equivalent early-clear controls for ephemeral Private Window state.
+- Fixed the Site Information popover flashing closed by keeping a stable `GtkImage` child and updating only the image instead of resetting the `GtkMenuButton` child.
+
+### Hardening & reliability
+
+- Fixed Home navigation history: entering NiOn's synthetic Home/New Tab page now retains a strong reference to the active WebKit back/forward item, keeps Back enabled, and returns to that exact page when Back/`Alt+Left` is used.
+- Re-audited Tor fail-closed navigation, private-session ephemerality, temporary permissions, per-site JavaScript isolation, crash recovery, data clearing, pinned/session state, downloads, `target=_blank`, and GTK4 context-menu invariants.
+- Promoted 1.4.0 release metadata to Stable and added a final hardening/release regression guard.
+
 ## 1.3.0 — 2026-07-26
 
 ### Tabs & Private Browsing

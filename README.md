@@ -2,7 +2,7 @@
 
 NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens both clearnet and Tor v3 `.onion` sites through its own bundled Tor runtime and is designed to fail closed rather than silently fall back to a direct connection.
 
-**Stable release: 1.3.0**  
+**Stable release: 1.4.0**  
 **Platform: GNU/Linux x86_64 AppImage**
 
 > NiOn is not Tor Browser. It does not claim Tor Browser-grade anonymity, anti-fingerprinting, or browser-hardening guarantees.
@@ -11,7 +11,7 @@ NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens b
 
 - Routes clearnet and `.onion` browsing through bundled Tor.
 - Blocks new web navigation when Tor is unavailable or the Tor child process fails.
-- Supports multiple tabs, session restore, pinned tabs, closed-tab recovery, bookmarks, downloads, per-site zoom, page find, printing/PDF, and site information.
+- Supports multiple tabs, session restore, crash-safe recovery choices, pinned tabs, closed-tab recovery, bookmarks, downloads, per-site zoom, page find, printing/PDF, site information, temporary site permissions, and per-site JavaScript control.
 - Keeps normal cookies and website data persistent so ordinary login sessions can survive restarts.
 - Provides a separate Private Window backed by an ephemeral WebKit network session.
 - Detects Onion-Location advertisements and can open the advertised onion service in a new tab.
@@ -27,6 +27,7 @@ NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens b
 - Pinned tabs stay in the left tab block, show a `📌` marker, and are restored with the normal session.
 - Pinned tabs are protected from bulk-close actions, while explicit Close Tab / `Ctrl+W` still works.
 - Links using `target="_blank"`, `window.open()`, and context-menu new-tab actions open inside NiOn.
+- The internal Home/New Tab page preserves the page you came from, so Back returns to the previous website instead of losing navigation context.
 
 ### Private Window
 
@@ -87,6 +88,13 @@ The site-information popover reports:
 
 HTTPS certificate errors remain strict-fail. For `.onion` services NiOn distinguishes onion-service transport from ordinary HTTPS rather than labeling every onion URL as HTTPS.
 
+Site controls are also available here:
+
+- JavaScript can be enabled/disabled per site. Normal-window rules persist locally; Private Window rules are memory-only.
+- Camera, microphone, geolocation, and notifications are blocked by default and can be **Allowed temporarily** for the current origin.
+- Temporary permission grants last only for the current NiOn window and can be reset from Site Information.
+- Screen/display capture and permission classes outside this scoped UI remain blocked.
+
 ### Onion-Location
 
 When an HTTPS clearnet page advertises a valid Tor v3 Onion-Location, NiOn shows an **Onion** badge. Selecting it opens the onion address inside NiOn.
@@ -97,11 +105,16 @@ When an HTTPS clearnet page advertises a valid Tor v3 Onion-Location, NiOn shows
 - Mute/unmute from the tab controls/context menu.
 - Mute state participates in normal session restore.
 
-### Local data controls
+### Recovery and local data controls
+
+If NiOn detects that the previous normal session did not shut down cleanly, it does **not** restore that session automatically. A recovery dialog offers **Restore Tabs** or **Start Fresh**. Unclean-session recovery uses saved URLs/tab metadata and intentionally skips opaque WebKit session-state blobs before the user chooses to restore, reducing the chance of a startup crash loop. Invalid or oversized session files continue to be quarantined and NiOn starts fresh.
+
+Data controls:
 
 - **Clear Data for This Site…** removes matching WebKit website data for the active site.
-- **Clear Browsing Data…** clears normal browsing data globally.
-- Private website data is ephemeral and is not mixed into the normal persistent profile.
+- **Browsing Data…** opens a selective manager for cookies/site storage, Web cache, saved zoom levels, per-site JavaScript rules, and temporary site permissions.
+- Website data + cache are selected by default to preserve the old global-clear behavior; zoom and site-control rules require explicit selection.
+- Private website data is ephemeral and is not mixed into the normal persistent profile; the same manager can clear the current Private Window's in-memory state early.
 
 ## Privacy model
 
@@ -111,9 +124,9 @@ NiOn is intentionally Tor-only for web traffic. Important safeguards include:
 - no intentional direct-network fallback;
 - dead loopback SOCKS replacement after Tor failure;
 - navigation blocking while Tor is offline;
-- WebRTC disabled;
+- WebRTC peer connections disabled;
 - DNS prefetching disabled;
-- camera, microphone, geolocation, and notification permission requests denied;
+- camera, microphone, geolocation, and notifications blocked by default with explicit temporary per-origin grants;
 - WebGL and WebAudio disabled;
 - Tor internal-address rejection;
 - cancellation of relevant WebKit activity/downloads when Tor fails.
@@ -135,7 +148,7 @@ See [PRIVACY.md](PRIVACY.md) for the threat model and limitations.
 
 - NiOn is **not Tor Browser** and should not be treated as providing the same anti-fingerprinting/anonymity protections.
 - Current production AppImage target is x86_64 Linux.
-- Website compatibility can be reduced by privacy hardening such as disabled WebRTC, WebGL, WebAudio, and denied device permissions.
+- Website compatibility can be reduced by privacy hardening such as disabled WebRTC peer connections, WebGL, and WebAudio; temporarily allowing camera, microphone, geolocation, or notifications can expose sensitive information to that site.
 - A completed download, saved/printed PDF, bookmark, or text copied to the system clipboard can outlive a Private Window because it was explicitly exported outside the ephemeral session.
 - Normal browsing intentionally persists cookies/site data and therefore leaves local state unless the user clears it.
 - AppImage portability still depends on host-core components such as the kernel, glibc compatibility, graphics stack, and desktop integration.
@@ -170,7 +183,7 @@ Normal NiOn data lives outside the AppImage:
 
 ```text
 ~/.local/share/nion/   cookies, session, downloads, bookmarks, Tor state, WebKit data
-~/.config/nion/        preferences and per-site zoom
+~/.config/nion/        preferences, per-site zoom, and normal per-site JavaScript rules
 ~/.cache/nion/         WebKit cache
 ```
 
@@ -181,14 +194,14 @@ Private Window data does not use these normal persistence paths for private webs
 ## Run the AppImage
 
 ```bash
-chmod +x NiOn-1.3.0-x86_64.AppImage
-./NiOn-1.3.0-x86_64.AppImage
+chmod +x NiOn-1.4.0-x86_64.AppImage
+./NiOn-1.4.0-x86_64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.3.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.4.0-x86_64.AppImage
 ```
 
 ## Build from source
@@ -211,8 +224,8 @@ Build the production AppImage with:
 Expected output:
 
 ```text
-dist/NiOn-1.3.0-x86_64.AppImage
-dist/NiOn-1.3.0-x86_64.AppImage.sha256
+dist/NiOn-1.4.0-x86_64.AppImage
+dist/NiOn-1.4.0-x86_64.AppImage.sha256
 ```
 
 See [BUILDING.md](BUILDING.md) for the complete build/release procedure and [TESTING.md](TESTING.md) for runtime validation.

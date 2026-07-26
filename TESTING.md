@@ -1,6 +1,6 @@
-# NiOn 1.3.0 Testing
+# NiOn 1.4.0 Testing
 
-This document is the final runtime checklist for the 1.3.0 release. Static scripts are useful guards, but they do not replace live testing on the Linux system used to build/release the AppImage.
+This document is the runtime checklist for the NiOn 1.4.0 Stable release. Static scripts are useful guards, but they do not replace live testing on the Linux system used to build/release the AppImage.
 
 ## 1. Static regression suite
 
@@ -33,6 +33,9 @@ The dedicated feature checks can also be run individually:
 ./scripts/test-context-menu-ownership.sh
 ./scripts/test-context-menu-gtk4-signature.sh
 ./scripts/test-docs-stage5.sh
+./scripts/test-site-controls-stage1.sh
+./scripts/test-recovery-data-stage2.sh
+./scripts/test-hardening-stage3.sh
 ```
 
 ## 2. Native build smoke test
@@ -91,6 +94,16 @@ Test web-created tabs:
 - right-click plain text, a link, and an image.
 
 None of these actions may crash NiOn.
+
+## Home / Back navigation regression
+
+1. Open a new tab.
+2. Navigate to `https://google.com` (or another reachable test site).
+3. Click the NiOn Home button.
+4. Confirm the internal Home page appears and **Back is enabled**.
+5. Click Back or press `Alt+Left`.
+6. Confirm the tab returns to the page that was active before Home.
+7. Repeat from a page that already has back-history; the first Back from Home must return to the immediately previous active page, then normal WebKit history should continue.
 
 ## 5. Pinned tabs
 
@@ -214,7 +227,7 @@ On a test site with cookies/storage:
 2. Approve the confirmation.
 3. Confirm site state is removed/reloaded as expected.
 4. Confirm unrelated sites are not deliberately selected for clearing.
-5. Separately test **Clear Browsing Data…** for the global operation.
+5. Separately test **Browsing Data…** for the global operation.
 
 ## 13. Profile recovery
 
@@ -244,6 +257,15 @@ While loading both clearnet and `.onion` pages:
 
 Review the observed sockets/processes. The expected browser-network path is through the local NiOn Tor SOCKS endpoint; no unexplained direct remote WebKit/browser connection should be accepted as normal.
 
+## Final 1.4.0 hardening check
+
+```bash
+./scripts/test-hardening-stage3.sh
+./scripts/release-preflight.sh
+```
+
+Both must pass before producing/uploading the release AppImage. Static PASS does not replace the live Tor, Private Window, permission, recovery, data-clear, Home/Back, and network-audit scenarios in this document.
+
 ## 15. AppImage validation
 
 Build first:
@@ -255,28 +277,49 @@ Build first:
 Then:
 
 ```bash
-./scripts/test-appimage.sh dist/NiOn-1.3.0-x86_64.AppImage
+./scripts/test-appimage.sh dist/NiOn-1.4.0-x86_64.AppImage
 cd dist
-sha256sum -c NiOn-1.3.0-x86_64.AppImage.sha256
+sha256sum -c NiOn-1.4.0-x86_64.AppImage.sha256
 ```
 
 Run the artifact:
 
 ```bash
-./NiOn-1.3.0-x86_64.AppImage
+./NiOn-1.4.0-x86_64.AppImage
 ```
 
 or without FUSE:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.3.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.4.0-x86_64.AppImage
 ```
 
 Repeat the critical smoke tests against the AppImage itself: Tor bootstrap, clearnet, `.onion`, target-blank/new-tab, context menu, persistent normal session, Private Window ephemerality, and normal/private downloads.
 
+## Site Controls — 1.4.0 Stage 1
+
+Run:
+
+```bash
+./scripts/test-site-controls-stage1.sh
+```
+
+Runtime checks:
+
+- open Site Information on two different sites and verify JavaScript state is site-specific;
+- disable JavaScript for one normal site, restart NiOn, and verify the rule persists only for that site;
+- in Private Window, disable JavaScript, close the Private Window, open a new one, and verify the rule is gone;
+- verify camera, microphone, geolocation, and notification requests are blocked unless **Allow temporarily** is selected;
+- allow a supported permission, reload/re-request it in the same window and verify the temporary grant is reused;
+- close the window and verify the temporary grant is gone;
+- reset temporary permissions from Site Information and confirm matching camera/microphone capture stops;
+- verify screen/display capture remains blocked;
+- verify `target=_blank`, right-click context menus, normal/private downloads, and Tor fail-closed behavior remain functional.
+
+
 ## Release gate
 
-Do not publish 1.3.0 if any of these remain reproducibly broken:
+Do not advance this 1.4.0 development build if any of these remain reproducibly broken:
 
 - direct-network fallback or fail-closed regression;
 - Tor bootstrap/runtime packaging;
@@ -287,3 +330,34 @@ Do not publish 1.3.0 if any of these remain reproducibly broken:
 - private session/history persistence leak;
 - AppImage startup or missing runtime dependency;
 - release manifest/version/AppImage naming mismatch.
+
+
+## Recovery & Data Controls — 1.4.0 Stage 2
+
+### Site Information popover regression
+
+1. Open a normal HTTPS page.
+2. Click the information button beside Home repeatedly.
+3. Confirm the popover stays open instead of flashing and immediately closing.
+4. Toggle the JavaScript switch, close/reopen the popover, and confirm the state remains usable.
+5. Repeat on a page with mixed-content warning if available.
+
+### Unclean-shutdown recovery
+
+1. Enable session restore and open several normal tabs, including at least one pinned tab.
+2. Terminate NiOn uncleanly (for example, kill the NiOn process; do not use normal Exit).
+3. Start NiOn again.
+4. Confirm NiOn shows **Restore Tabs** / **Start Fresh** and does not navigate restored tabs automatically before a choice.
+5. Choose **Restore Tabs** and confirm URLs, pinned state, and mute state recover after Tor is ready.
+6. Repeat the unclean shutdown, then choose **Start Fresh** and confirm only a blank tab remains.
+7. Restart normally and confirm the fresh state is now the saved session.
+8. Corrupt a disposable copy of `session.ini`; confirm NiOn quarantines it and starts fresh rather than crashing.
+
+### Browsing Data Manager
+
+1. Open **Browsing Data…**. Confirm website data and Web cache are selected by default.
+2. Clear only saved zoom levels; confirm open tabs reset to 100% and `site-zoom.ini` overrides are gone.
+3. Create a per-site JavaScript disable rule, clear only JavaScript site rules, then confirm the site defaults to JavaScript enabled on the next/reloaded navigation.
+4. Temporarily allow a permission, clear only Temporary site permissions, and confirm camera/microphone capture is stopped and the Site Information permission status returns to blocked-by-default.
+5. Clear website data + cache and confirm logins/site storage/cache are removed while bookmarks, downloads history, and session tabs remain.
+6. Repeat in Private Window and confirm no normal profile files are created or modified by private-only JS/permission clearing.

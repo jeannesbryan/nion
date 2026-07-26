@@ -1,6 +1,6 @@
 # Building NiOn
 
-NiOn 1.3.0 targets GNU/Linux x86_64 for its production AppImage.
+NiOn 1.4.0 targets GNU/Linux x86_64 for its production AppImage.
 
 ## Requirements
 
@@ -27,10 +27,10 @@ printf 'NiOn: %s\nTor: %s\nExpert Bundle: %s\nAppImage: %s\n' \
   "$NION_APPIMAGE_BASENAME"
 ```
 
-For 1.3.0 the expected AppImage name is:
+For 1.4.0 the expected AppImage name is:
 
 ```text
-NiOn-1.3.0-x86_64.AppImage
+NiOn-1.4.0-x86_64.AppImage
 ```
 
 Do not hard-code a release version into build/package scripts. Update the appropriate one-line manifest value instead.
@@ -89,8 +89,8 @@ The normal production flow is:
 Expected artifacts:
 
 ```text
-dist/NiOn-1.3.0-x86_64.AppImage
-dist/NiOn-1.3.0-x86_64.AppImage.sha256
+dist/NiOn-1.4.0-x86_64.AppImage
+dist/NiOn-1.4.0-x86_64.AppImage.sha256
 ```
 
 The AppImage intentionally does not replace host-core components such as the kernel, glibc base environment, or graphics-driver stack.
@@ -99,26 +99,26 @@ The AppImage intentionally does not replace host-core components such as the ker
 
 ```bash
 cd dist
-sha256sum -c NiOn-1.3.0-x86_64.AppImage.sha256
+sha256sum -c NiOn-1.4.0-x86_64.AppImage.sha256
 ```
 
 Expected:
 
 ```text
-NiOn-1.3.0-x86_64.AppImage: OK
+NiOn-1.4.0-x86_64.AppImage: OK
 ```
 
 Run it:
 
 ```bash
-chmod +x NiOn-1.3.0-x86_64.AppImage
-./NiOn-1.3.0-x86_64.AppImage
+chmod +x NiOn-1.4.0-x86_64.AppImage
+./NiOn-1.4.0-x86_64.AppImage
 ```
 
 Without FUSE:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.3.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.4.0-x86_64.AppImage
 ```
 
 ## Preflight and runtime validation
@@ -132,7 +132,7 @@ Run the static/release checks:
 Then run the packaged diagnostic explicitly:
 
 ```bash
-./scripts/test-appimage.sh dist/NiOn-1.3.0-x86_64.AppImage
+./scripts/test-appimage.sh dist/NiOn-1.4.0-x86_64.AppImage
 ```
 
 Finally complete the live scenarios in `TESTING.md`, including Tor failure/recovery, normal/private persistence separation, downloads, context menus/new-window links, and the network audit.
@@ -174,13 +174,13 @@ NiOn's preferred release flow is manual after local validation.
 1. Build and test the AppImage.
 2. Verify its SHA-256 file.
 3. Commit/push the final source.
-4. Create tag `v1.3.0` in GitHub.
-5. Create a GitHub Release for `v1.3.0`.
+4. Create tag `v1.4.0` in GitHub.
+5. Create a GitHub Release for `v1.4.0`.
 6. Upload:
 
 ```text
-NiOn-1.3.0-x86_64.AppImage
-NiOn-1.3.0-x86_64.AppImage.sha256
+NiOn-1.4.0-x86_64.AppImage
+NiOn-1.4.0-x86_64.AppImage.sha256
 ```
 
 The repository's GitHub Actions workflow remains optional; the locally validated AppImage is the intended primary release artifact.

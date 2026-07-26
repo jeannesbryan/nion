@@ -30,13 +30,11 @@ for removed in APPIMAGE.md GITHUB_RELEASE.md REPOSITORY.md ROADMAP.md TOR_RUNTIM
 done
 pass "obsolete/duplicate root documentation removed"
 
-grep -Fq '**Stable release: 1.3.0**' README.md || fail "README stable release marker missing"
 grep -Fq '## Main features' README.md || fail "README feature section missing"
 grep -Fq '## Strengths' README.md || fail "README strengths section missing"
 grep -Fq '## Limitations' README.md || fail "README limitations section missing"
 grep -Fq '## Keyboard shortcuts' README.md || fail "README shortcuts section missing"
 grep -Fq '## Build from source' README.md || fail "README concise build section missing"
-if grep -Fq 'Current development:' README.md; then fail "README still contains development-stage marker"; fi
 pass "README is product-focused"
 
 grep -Fq '## Build the AppImage' BUILDING.md || fail "BUILDING AppImage procedure missing"
@@ -53,4 +51,4 @@ if [[ -e release/manifest/README.md ]]; then
 fi
 pass "manifest documentation consolidated"
 
-echo "NION 1.3.0 STAGE 5 DOCUMENTATION CHECK: PASS"
+echo "NION DOCUMENTATION CONSOLIDATION CHECK: PASS"

@@ -43,8 +43,6 @@ grep -q 'Print / Save as PDF…' "$SRC" \
   || fail "Print / Save as PDF label missing"
 pass "Print / Save as PDF UI"
 
-grep -q 'Stable release: 1.3.0' "$README" \
-  || fail "README stable release marker missing"
 grep -q 'Better web-page context menu' "$README" \
   || fail "README page context-menu documentation missing"
 grep -q 'Print / Save as PDF' "$README" \
