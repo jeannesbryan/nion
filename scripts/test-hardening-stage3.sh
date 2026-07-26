@@ -7,9 +7,11 @@ source ./scripts/manifest.sh
 fail() { printf 'FAIL  %s\n' "$*" >&2; exit 1; }
 need() { grep -Fq "$1" "$2" || fail "$3"; }
 
-[[ "$NION_VERSION" == "1.4.0" ]] || fail 'unexpected NiOn version'
-[[ "$NION_RELEASE_STATUS" == "Stable" ]] || fail '1.4.0 final must be Stable'
-[[ "$NION_APPSTREAM_RELEASE_TYPE" == "stable" ]] || fail 'AppStream release type must be stable'
+python3 - "$NION_VERSION" <<'PYV' || fail 'current version predates the 1.4.0 hardening baseline'
+import sys
+parts=lambda v: tuple(int(x) for x in v.split('.'))
+raise SystemExit(0 if parts(sys.argv[1]) >= parts('1.4.0') else 1)
+PYV
 
 # Synthetic Home must preserve a return target because load_html(about:blank)
 # is not a reliable normal history entry.
@@ -32,7 +34,6 @@ need 'crash_recovery_decision_pending' src/main.c 'Crash recovery decision gate 
 need 'Browsing Data' src/main.c 'Browsing Data manager missing'
 need 'site_info_icon = gtk_image_new_from_icon_name' src/main.c 'Stable Site Information icon child missing'
 
-need '**Stable release: 1.4.0**' README.md 'README is not marked Stable 1.4.0'
 need '## 1.4.0 — 2026-07-26' CHANGELOG.md 'Final 1.4.0 changelog entry missing'
 
-printf 'NION 1.4.0 HARDENING / FINAL CHECK: PASS\n'
+printf 'NION 1.4.0+ HARDENING REGRESSION: PASS\n'

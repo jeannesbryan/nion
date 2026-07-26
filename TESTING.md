@@ -36,6 +36,7 @@ The dedicated feature checks can also be run individually:
 ./scripts/test-site-controls-stage1.sh
 ./scripts/test-recovery-data-stage2.sh
 ./scripts/test-hardening-stage3.sh
+./scripts/test-content-blocking-stage1.sh
 ```
 
 ## 2. Native build smoke test
@@ -277,21 +278,21 @@ Build first:
 Then:
 
 ```bash
-./scripts/test-appimage.sh dist/NiOn-1.4.0-x86_64.AppImage
+./scripts/test-appimage.sh dist/NiOn-1.5.0-x86_64.AppImage
 cd dist
-sha256sum -c NiOn-1.4.0-x86_64.AppImage.sha256
+sha256sum -c NiOn-1.5.0-x86_64.AppImage.sha256
 ```
 
 Run the artifact:
 
 ```bash
-./NiOn-1.4.0-x86_64.AppImage
+./NiOn-1.5.0-x86_64.AppImage
 ```
 
 or without FUSE:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.4.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.5.0-x86_64.AppImage
 ```
 
 Repeat the critical smoke tests against the AppImage itself: Tor bootstrap, clearnet, `.onion`, target-blank/new-tab, context menu, persistent normal session, Private Window ephemerality, and normal/private downloads.
@@ -317,9 +318,30 @@ Runtime checks:
 - verify `target=_blank`, right-click context menus, normal/private downloads, and Tor fail-closed behavior remain functional.
 
 
+## Content Blocking — 1.5.0 Stage 1
+
+Run:
+
+```bash
+./scripts/test-content-blocking-stage1.sh
+```
+
+Runtime checks:
+
+1. Open a normal HTTPS site and click the Site Information button repeatedly. The transient Site Information window must open without flashing the browser window.
+2. Confirm **Content blocking** is enabled by default and reports the bundled lightweight filter as ready.
+3. Visit a site known to load common third-party advertising/tracking resources and compare behavior with Content blocking ON versus OFF for that site. Do not expect complete ad removal; this is a deliberately small ruleset.
+4. Disable Content blocking for a normal site, restart NiOn, and confirm the exception persists only for that site.
+5. Re-enable it and confirm the exception disappears.
+6. In Private Window, disable Content blocking, close the Private Window, open a new Private Window, and confirm the exception is gone.
+7. Use **Browsing Data…** to clear normal/private content-blocking exceptions and confirm the switches return to their default state.
+8. Re-test `target=_blank`, `window.open()`, right-click link/image context menus, per-site JavaScript, normal/private downloads, and Tor fail-closed behavior.
+
+The filter must not create a new network client or remote update path. All web requests that are not blocked must continue through NiOn's existing WebKit/Tor session.
+
 ## Release gate
 
-Do not advance this 1.4.0 development build if any of these remain reproducibly broken:
+Do not ship the 1.5.0 release if any of these remain reproducibly broken:
 
 - direct-network fallback or fail-closed regression;
 - Tor bootstrap/runtime packaging;
@@ -334,7 +356,7 @@ Do not advance this 1.4.0 development build if any of these remain reproducibly 
 
 ## Recovery & Data Controls — 1.4.0 Stage 2
 
-### Site Information popover regression
+### Site Information window regression
 
 1. Open a normal HTTPS page.
 2. Click the information button beside Home repeatedly.
@@ -361,3 +383,15 @@ Do not advance this 1.4.0 development build if any of these remain reproducibly 
 4. Temporarily allow a permission, clear only Temporary site permissions, and confirm camera/microphone capture is stopped and the Site Information permission status returns to blocked-by-default.
 5. Clear website data + cache and confirm logins/site storage/cache are removed while bookmarks, downloads history, and session tabs remain.
 6. Repeat in Private Window and confirm no normal profile files are created or modified by private-only JS/permission clearing.
+
+
+## Final 1.5.0 release audit
+
+Before publishing 1.5.0 Stable:
+
+1. Open Site Information on a 1366×768-class display or smaller. Confirm the window stays on-screen, is resizable, and the lower Address/permission controls are reachable with vertical scrolling.
+2. Confirm Content blocking defaults ON, per-site normal exceptions persist, and Private exceptions disappear with the Private Window.
+3. Confirm WebKit ITP is the default tracking mode and the strict third-party-cookie preference still switches to the explicit blanket policy.
+4. Confirm audible autoplay is blocked by default, muted autoplay works, and per-site sound exceptions obey normal/private persistence rules.
+5. Re-test Tor fail-closed, `target=_blank`, right-click context menus, crash recovery, Browsing Data, normal/private downloads, and Home → Back navigation.
+6. Build the AppImage, run `./scripts/release-preflight.sh`, verify the SHA-256 file, and smoke-test the packaged AppImage.

@@ -45,6 +45,13 @@
 #define NION_MAX_SITE_JAVASCRIPT_FILE_BYTES (1024 * 1024)
 #define NION_MAX_SITE_JAVASCRIPT_ENTRIES 2048
 #define NION_SITE_JAVASCRIPT_FORMAT 1
+#define NION_MAX_CONTENT_BLOCKING_FILE_BYTES (1024 * 1024)
+#define NION_MAX_CONTENT_BLOCKING_EXCEPTIONS 2048
+#define NION_CONTENT_BLOCKING_FORMAT 1
+#define NION_MAX_AUTOPLAY_FILE_BYTES (1024 * 1024)
+#define NION_MAX_AUTOPLAY_EXCEPTIONS 2048
+#define NION_AUTOPLAY_FORMAT 1
+#define NION_CONTENT_FILTER_ID "nion-lightweight-v1"
 #define NION_ZOOM_MIN_PERCENT 50
 #define NION_ZOOM_MAX_PERCENT 200
 #define NION_ZOOM_DEFAULT_PERCENT 100
@@ -89,6 +96,7 @@ struct _NionTab {
     gboolean mixed_content_displayed;
     gboolean mixed_content_run;
     gboolean mixed_content_other;
+    gboolean content_filter_applied;
 
     guint onion_cancel_retries;
     guint retry_source_id;
@@ -142,6 +150,8 @@ struct _NionClearDataRequest {
     WebKitWebsiteDataTypes types;
     gboolean clear_zoom;
     gboolean clear_javascript;
+    gboolean clear_content_blocking;
+    gboolean clear_autoplay;
     gboolean clear_permissions;
 };
 
@@ -157,15 +167,20 @@ struct _NionApp {
     GtkWidget *onion_button;
     GtkWidget *site_info_button;
     GtkWidget *site_info_icon;
-    GtkWidget *site_info_popover;
+    GtkWidget *site_info_window;
     GtkWidget *site_info_title_label;
     GtkWidget *site_info_host_label;
     GtkWidget *site_info_connection_label;
     GtkWidget *site_info_route_label;
     GtkWidget *site_info_mixed_label;
+    GtkWidget *site_info_tracking_label;
     GtkWidget *site_info_uri_label;
     GtkWidget *site_info_javascript_switch;
     GtkWidget *site_info_javascript_status_label;
+    GtkWidget *site_info_content_blocking_switch;
+    GtkWidget *site_info_content_blocking_status_label;
+    GtkWidget *site_info_autoplay_switch;
+    GtkWidget *site_info_autoplay_status_label;
     GtkWidget *site_info_camera_label;
     GtkWidget *site_info_microphone_label;
     GtkWidget *site_info_geolocation_label;
@@ -244,10 +259,19 @@ struct _NionApp {
     gchar *bookmarks_file;
     gchar *site_zoom_file;
     gchar *site_javascript_file;
+    gchar *content_blocking_file;
+    gchar *autoplay_file;
+    gchar *content_filter_store_dir;
     GPtrArray *bookmarks;
     GHashTable *site_zoom;
     GHashTable *site_javascript_disabled;
+    GHashTable *content_blocking_disabled;
+    GHashTable *autoplay_allowed_sites;
     GHashTable *temporary_permissions;
+    WebKitUserContentFilterStore *content_filter_store;
+    WebKitUserContentFilter *content_filter;
+    gboolean content_filter_ready;
+    gboolean content_filter_failed;
     GQueue *closed_tabs;
 };
 
@@ -301,6 +325,7 @@ static void nion_apply_network_proxy(NionApp *app);
 static void nion_store_tor_log(NionApp *app, const gchar *line);
 static void nion_update_onion_button(NionApp *app);
 static void nion_update_site_info(NionApp *app);
+static void nion_update_site_info_button(NionApp *app);
 static void nion_detect_onion_location(NionTab *tab);
 static void nion_show_downloads(NionApp *app);
 static void nion_save_download_history(NionApp *app);
@@ -338,6 +363,12 @@ static void nion_save_site_zoom(NionApp *app);
 static void nion_apply_site_zoom(NionTab *tab, const gchar *uri);
 static void nion_load_site_javascript(NionApp *app);
 static void nion_save_site_javascript(NionApp *app);
+static void nion_load_content_blocking(NionApp *app);
+static void nion_save_content_blocking(NionApp *app);
+static void nion_load_autoplay(NionApp *app);
+static void nion_save_autoplay(NionApp *app);
+static void nion_apply_content_blocking(NionTab *tab, const gchar *uri);
+static void nion_prepare_content_filter(NionApp *app);
 static void nion_apply_site_javascript(NionTab *tab, const gchar *uri);
 static const gchar *nion_search_template(const NionApp *app);
 static gboolean nion_validate_uri(const gchar *uri, gchar **message);
@@ -1015,6 +1046,410 @@ static gchar *nion_permission_cache_key(const gchar *origin, guint permission)
         : NULL;
 }
 
+
+static gboolean nion_content_blocking_enabled_for_uri(NionApp *app, const gchar *uri)
+{
+    if (!app || !app->content_blocking_disabled || !uri || !*uri)
+        return TRUE;
+
+    gchar *key = nion_site_zoom_key_for_uri(uri);
+    gboolean enabled = !key || !g_hash_table_contains(app->content_blocking_disabled, key);
+    g_free(key);
+    return enabled;
+}
+
+static gboolean nion_set_content_blocking_enabled(NionApp *app,
+                                                   const gchar *uri,
+                                                   gboolean enabled)
+{
+    if (!app || !app->content_blocking_disabled || !uri || !*uri)
+        return FALSE;
+
+    gchar *key = nion_site_zoom_key_for_uri(uri);
+    if (!key)
+        return FALSE;
+
+    gboolean changed = FALSE;
+    if (enabled) {
+        changed = g_hash_table_remove(app->content_blocking_disabled, key);
+    } else if (!g_hash_table_contains(app->content_blocking_disabled, key)) {
+        if (g_hash_table_size(app->content_blocking_disabled) >= NION_MAX_CONTENT_BLOCKING_EXCEPTIONS) {
+            g_warning("NiOn content-blocking exception limit reached; not storing exception for %s", key);
+        } else {
+            g_hash_table_add(app->content_blocking_disabled, g_strdup(key));
+            changed = TRUE;
+        }
+    }
+
+    g_free(key);
+    return changed;
+}
+
+static void nion_save_content_blocking(NionApp *app)
+{
+    if (!app || app->is_private || !app->content_blocking_file ||
+        !app->content_blocking_disabled)
+        return;
+
+    GKeyFile *key_file = g_key_file_new();
+    g_key_file_set_integer(key_file, "Meta", "format", NION_CONTENT_BLOCKING_FORMAT);
+
+    GList *keys = g_hash_table_get_keys(app->content_blocking_disabled);
+    keys = g_list_sort(keys, (GCompareFunc)g_strcmp0);
+    guint index = 0;
+    for (GList *node = keys; node && index < NION_MAX_CONTENT_BLOCKING_EXCEPTIONS;
+         node = node->next) {
+        const gchar *key = node->data;
+        if (!key || !*key || strlen(key) > 1024)
+            continue;
+
+        gchar *group = g_strdup_printf("Site-%u", index++);
+        g_key_file_set_string(key_file, group, "key", key);
+        g_key_file_set_boolean(key_file, group, "content-blocking-enabled", FALSE);
+        g_free(group);
+    }
+    g_list_free(keys);
+    g_key_file_set_integer(key_file, "Meta", "count", (gint)index);
+    nion_write_key_file_atomic(key_file, app->content_blocking_file);
+    g_key_file_free(key_file);
+}
+
+static void nion_load_content_blocking(NionApp *app)
+{
+    if (!app)
+        return;
+
+    if (app->content_blocking_disabled)
+        g_hash_table_unref(app->content_blocking_disabled);
+    app->content_blocking_disabled = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+
+    /* Private Windows get a clean memory-only exception set. They never read
+     * the normal content-blocking exception profile. */
+    if (app->is_private || !app->content_blocking_file)
+        return;
+    if (!g_file_test(app->content_blocking_file, G_FILE_TEST_EXISTS))
+        return;
+    if (!nion_profile_file_within_limit(app->content_blocking_file,
+                                        NION_MAX_CONTENT_BLOCKING_FILE_BYTES)) {
+        nion_quarantine_profile_file(app->content_blocking_file, "content blocking");
+        return;
+    }
+
+    GKeyFile *key_file = g_key_file_new();
+    GError *error = NULL;
+    if (!g_key_file_load_from_file(key_file, app->content_blocking_file, G_KEY_FILE_NONE, &error)) {
+        g_warning("Could not load NiOn content-blocking exceptions: %s",
+                  error ? error->message : "unknown error");
+        g_clear_error(&error);
+        g_key_file_free(key_file);
+        nion_quarantine_profile_file(app->content_blocking_file, "content blocking");
+        return;
+    }
+
+    gboolean valid = TRUE;
+    gint format = g_key_file_get_integer(key_file, "Meta", "format", &error);
+    if (error || format != NION_CONTENT_BLOCKING_FORMAT) {
+        valid = FALSE;
+        g_clear_error(&error);
+    }
+    gint count = 0;
+    if (valid) {
+        count = g_key_file_get_integer(key_file, "Meta", "count", &error);
+        if (error || count < 0 || count > NION_MAX_CONTENT_BLOCKING_EXCEPTIONS) {
+            valid = FALSE;
+            g_clear_error(&error);
+        }
+    }
+
+    for (gint i = 0; valid && i < count; i++) {
+        gchar *group = g_strdup_printf("Site-%d", i);
+        gchar *key = g_key_file_get_string(key_file, group, "key", &error);
+        gboolean enabled = g_key_file_get_boolean(key_file, group,
+                                                   "content-blocking-enabled", &error);
+        if (error || !key || !*key || strlen(key) > 1024 || enabled ||
+            g_hash_table_contains(app->content_blocking_disabled, key)) {
+            valid = FALSE;
+            g_clear_error(&error);
+            g_free(key);
+            g_free(group);
+            break;
+        }
+        g_hash_table_add(app->content_blocking_disabled, key);
+        g_free(group);
+    }
+
+    g_key_file_free(key_file);
+    if (!valid) {
+        g_hash_table_remove_all(app->content_blocking_disabled);
+        nion_quarantine_profile_file(app->content_blocking_file, "content blocking");
+    } else {
+        g_chmod(app->content_blocking_file, 0600);
+    }
+}
+
+static gboolean nion_autoplay_allowed_for_uri(NionApp *app, const gchar *uri)
+{
+    if (!app || !app->autoplay_allowed_sites || !uri || !*uri)
+        return FALSE;
+    gchar *key = nion_site_zoom_key_for_uri(uri);
+    gboolean allowed = key && g_hash_table_contains(app->autoplay_allowed_sites, key);
+    g_free(key);
+    return allowed;
+}
+
+static gboolean nion_set_autoplay_allowed_for_uri(NionApp *app, const gchar *uri, gboolean allowed)
+{
+    if (!app || !app->autoplay_allowed_sites || !uri || !*uri)
+        return FALSE;
+    gchar *key = nion_site_zoom_key_for_uri(uri);
+    if (!key)
+        return FALSE;
+    gboolean changed = FALSE;
+    if (!allowed)
+        changed = g_hash_table_remove(app->autoplay_allowed_sites, key);
+    else if (!g_hash_table_contains(app->autoplay_allowed_sites, key)) {
+        if (g_hash_table_size(app->autoplay_allowed_sites) >= NION_MAX_AUTOPLAY_EXCEPTIONS)
+            g_warning("NiOn autoplay exception limit reached; not storing exception for %s", key);
+        else {
+            g_hash_table_add(app->autoplay_allowed_sites, g_strdup(key));
+            changed = TRUE;
+        }
+    }
+    g_free(key);
+    return changed;
+}
+
+static void nion_save_autoplay(NionApp *app)
+{
+    if (!app || app->is_private || !app->autoplay_file || !app->autoplay_allowed_sites)
+        return;
+    GKeyFile *key_file = g_key_file_new();
+    g_key_file_set_integer(key_file, "Meta", "format", NION_AUTOPLAY_FORMAT);
+    GList *keys = g_hash_table_get_keys(app->autoplay_allowed_sites);
+    keys = g_list_sort(keys, (GCompareFunc)g_strcmp0);
+    guint index = 0;
+    for (GList *node = keys; node && index < NION_MAX_AUTOPLAY_EXCEPTIONS; node = node->next) {
+        const gchar *key = node->data;
+        if (!key || !*key || strlen(key) > 1024)
+            continue;
+        gchar *group = g_strdup_printf("Site-%u", index++);
+        g_key_file_set_string(key_file, group, "key", key);
+        g_key_file_set_boolean(key_file, group, "autoplay-with-sound", TRUE);
+        g_free(group);
+    }
+    g_list_free(keys);
+    g_key_file_set_integer(key_file, "Meta", "count", (gint)index);
+    nion_write_key_file_atomic(key_file, app->autoplay_file);
+    g_key_file_free(key_file);
+}
+
+static void nion_load_autoplay(NionApp *app)
+{
+    if (!app)
+        return;
+    if (app->autoplay_allowed_sites)
+        g_hash_table_unref(app->autoplay_allowed_sites);
+    app->autoplay_allowed_sites = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    if (app->is_private || !app->autoplay_file)
+        return;
+    if (!g_file_test(app->autoplay_file, G_FILE_TEST_EXISTS))
+        return;
+    if (!nion_profile_file_within_limit(app->autoplay_file, NION_MAX_AUTOPLAY_FILE_BYTES)) {
+        nion_quarantine_profile_file(app->autoplay_file, "autoplay exceptions");
+        return;
+    }
+    GKeyFile *key_file = g_key_file_new();
+    GError *error = NULL;
+    if (!g_key_file_load_from_file(key_file, app->autoplay_file, G_KEY_FILE_NONE, &error)) {
+        g_warning("Could not load NiOn autoplay exceptions: %s", error ? error->message : "unknown error");
+        g_clear_error(&error);
+        g_key_file_free(key_file);
+        nion_quarantine_profile_file(app->autoplay_file, "autoplay exceptions");
+        return;
+    }
+    gboolean valid = TRUE;
+    gint format = g_key_file_get_integer(key_file, "Meta", "format", &error);
+    if (error || format != NION_AUTOPLAY_FORMAT) { valid = FALSE; g_clear_error(&error); }
+    gint count = 0;
+    if (valid) {
+        count = g_key_file_get_integer(key_file, "Meta", "count", &error);
+        if (error || count < 0 || count > NION_MAX_AUTOPLAY_EXCEPTIONS) { valid = FALSE; g_clear_error(&error); }
+    }
+    for (gint i = 0; valid && i < count; i++) {
+        gchar *group = g_strdup_printf("Site-%d", i);
+        gchar *key = g_key_file_get_string(key_file, group, "key", &error);
+        gboolean allowed = g_key_file_get_boolean(key_file, group, "autoplay-with-sound", &error);
+        if (error || !key || !*key || strlen(key) > 1024 || !allowed || g_hash_table_contains(app->autoplay_allowed_sites, key)) {
+            valid = FALSE; g_clear_error(&error); g_free(key); g_free(group); break;
+        }
+        g_hash_table_add(app->autoplay_allowed_sites, key);
+        g_free(group);
+    }
+    g_key_file_free(key_file);
+    if (!valid) {
+        g_hash_table_remove_all(app->autoplay_allowed_sites);
+        nion_quarantine_profile_file(app->autoplay_file, "autoplay exceptions");
+    } else
+        g_chmod(app->autoplay_file, 0600);
+}
+
+static WebKitWebsitePolicies *nion_website_policies_for_uri(NionApp *app, const gchar *uri)
+{
+    WebKitAutoplayPolicy policy = nion_autoplay_allowed_for_uri(app, uri)
+        ? WEBKIT_AUTOPLAY_ALLOW
+        : WEBKIT_AUTOPLAY_ALLOW_WITHOUT_SOUND;
+    return webkit_website_policies_new_with_policies("autoplay", policy, NULL);
+}
+
+static void nion_policy_decision_use_for_uri(NionTab *tab, WebKitPolicyDecision *decision, const gchar *uri)
+{
+    if (!tab || !tab->app || !decision) {
+        if (decision) webkit_policy_decision_use(decision);
+        return;
+    }
+    WebKitWebsitePolicies *policies = nion_website_policies_for_uri(tab->app, uri);
+    webkit_policy_decision_use_with_policies(decision, policies);
+    g_object_unref(policies);
+}
+
+static WebKitUserContentFilter *nion_content_filter_for_app(NionApp *app)
+{
+    if (!app)
+        return NULL;
+    NionApp *owner = app->is_private ? app->owner : app;
+    return owner ? owner->content_filter : NULL;
+}
+
+static gboolean nion_content_filter_is_ready(NionApp *app)
+{
+    if (!app)
+        return FALSE;
+    NionApp *owner = app->is_private ? app->owner : app;
+    return owner && owner->content_filter_ready && owner->content_filter;
+}
+
+static gboolean nion_content_filter_has_failed(NionApp *app)
+{
+    if (!app)
+        return TRUE;
+    NionApp *owner = app->is_private ? app->owner : app;
+    return !owner || owner->content_filter_failed;
+}
+
+static void nion_apply_content_blocking(NionTab *tab, const gchar *uri)
+{
+    if (!tab || !tab->app || !tab->web_view)
+        return;
+
+    WebKitUserContentManager *manager =
+        webkit_web_view_get_user_content_manager(tab->web_view);
+    if (!manager)
+        return;
+
+    gboolean enabled = !tab->home_page && !tab->error_page &&
+        nion_content_blocking_enabled_for_uri(tab->app, uri);
+    WebKitUserContentFilter *filter = nion_content_filter_for_app(tab->app);
+
+    if (tab->content_filter_applied) {
+        webkit_user_content_manager_remove_filter_by_id(manager, NION_CONTENT_FILTER_ID);
+        tab->content_filter_applied = FALSE;
+    }
+
+    if (enabled && filter) {
+        webkit_user_content_manager_add_filter(manager, filter);
+        tab->content_filter_applied = TRUE;
+    }
+}
+
+static void nion_apply_content_filter_to_window(NionApp *app)
+{
+    if (!app || !app->notebook)
+        return;
+    gint pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook));
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(app->notebook), i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (tab && tab->web_view)
+            nion_apply_content_blocking(tab, webkit_web_view_get_uri(tab->web_view));
+    }
+    nion_update_site_info_button(app);
+}
+
+static void on_content_filter_saved(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    NionApp *app = user_data;
+    if (!app || app->shutting_down)
+        return;
+
+    GError *error = NULL;
+    WebKitUserContentFilter *filter = webkit_user_content_filter_store_save_finish(
+        WEBKIT_USER_CONTENT_FILTER_STORE(source), result, &error);
+    if (!filter) {
+        app->content_filter_failed = TRUE;
+        app->content_filter_ready = FALSE;
+        g_warning("NiOn lightweight content filter could not be compiled: %s",
+                  error ? error->message : "unknown error");
+        g_clear_error(&error);
+        nion_update_site_info_button(app);
+        return;
+    }
+
+    if (app->content_filter)
+        webkit_user_content_filter_unref(app->content_filter);
+    app->content_filter = filter;
+    app->content_filter_failed = FALSE;
+    app->content_filter_ready = TRUE;
+    nion_apply_content_filter_to_window(app);
+    if (app->private_windows) {
+        for (guint i = 0; i < app->private_windows->len; i++) {
+            NionApp *private_app = g_ptr_array_index(app->private_windows, i);
+            nion_apply_content_filter_to_window(private_app);
+        }
+    }
+}
+
+static void nion_prepare_content_filter(NionApp *app)
+{
+    if (!app || app->is_private || !app->content_filter_store_dir)
+        return;
+
+    if (g_mkdir_with_parents(app->content_filter_store_dir, 0700) != 0) {
+        g_warning("Could not create content-filter store %s: %s",
+                  app->content_filter_store_dir, g_strerror(errno));
+        app->content_filter_failed = TRUE;
+        return;
+    }
+    g_chmod(app->content_filter_store_dir, 0700);
+
+    GError *error = NULL;
+    GBytes *rules = g_resources_lookup_data(
+        "/io/github/jeannesbryan/Nion/content-blocking.json",
+        G_RESOURCE_LOOKUP_FLAGS_NONE, &error);
+    if (!rules) {
+        g_warning("Could not load bundled NiOn content-blocking rules: %s",
+                  error ? error->message : "unknown error");
+        g_clear_error(&error);
+        app->content_filter_failed = TRUE;
+        return;
+    }
+
+    app->content_filter_store = webkit_user_content_filter_store_new(
+        app->content_filter_store_dir);
+    if (!app->content_filter_store) {
+        app->content_filter_failed = TRUE;
+        g_bytes_unref(rules);
+        return;
+    }
+
+    webkit_user_content_filter_store_save(app->content_filter_store,
+                                          NION_CONTENT_FILTER_ID,
+                                          rules,
+                                          NULL,
+                                          on_content_filter_saved,
+                                          app);
+    g_bytes_unref(rules);
+}
+
 static gboolean nion_permission_is_temporarily_allowed(NionApp *app,
                                                         const gchar *origin,
                                                         guint permission)
@@ -1090,13 +1525,17 @@ static void nion_apply_cookie_policy(NionApp *app)
 {
     if (!app->network_session)
         return;
-
     WebKitCookieManager *cookies = webkit_network_session_get_cookie_manager(app->network_session);
-    webkit_cookie_manager_set_accept_policy(
-        cookies,
-        app->block_third_party_cookies
-            ? WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY
-            : WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS);
+    /* WebKit ITP supersedes ACCEPT_NO_THIRD_PARTY. Preserve NiOn's older
+     * strict option as an explicit alternative: default = ITP; strict =
+     * blanket third-party-cookie blocking with ITP disabled. */
+    if (app->block_third_party_cookies) {
+        webkit_network_session_set_itp_enabled(app->network_session, FALSE);
+        webkit_cookie_manager_set_accept_policy(cookies, WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY);
+    } else {
+        webkit_network_session_set_itp_enabled(app->network_session, TRUE);
+        webkit_cookie_manager_set_accept_policy(cookies, WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS);
+    }
 }
 
 static void nion_save_session(NionApp *app, gboolean clean_shutdown)
@@ -3302,6 +3741,15 @@ static GtkWidget *nion_site_info_row(const gchar *heading, GtkWidget **value_out
     gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
     gtk_label_set_xalign(GTK_LABEL(value), 0.0f);
     gtk_label_set_wrap(GTK_LABEL(value), TRUE);
+    /* Site information often contains unbroken URLs, .onion hostnames, and
+     * security/status tokens. PANGO_WRAP_WORD can let those strings dictate
+     * an enormous minimum/natural width. Allow character fallback wrapping
+     * and explicitly bound the label request so the transient window stays
+     * inside small laptop screens. */
+    gtk_label_set_wrap_mode(GTK_LABEL(value), PANGO_WRAP_WORD_CHAR);
+    gtk_label_set_width_chars(GTK_LABEL(value), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(value), 48);
+    gtk_widget_set_hexpand(value, TRUE);
     gtk_widget_add_css_class(title, "nion-site-info-key");
     gtk_widget_add_css_class(value, "nion-site-info-value");
 
@@ -3319,6 +3767,53 @@ static const gchar *nion_permission_status_text(NionApp *app,
     return nion_permission_is_temporarily_allowed(app, origin, permission)
         ? "Allowed temporarily"
         : "Blocked by default";
+}
+
+
+static void on_site_content_blocking_switch_notify(GObject *object,
+                                                    GParamSpec *pspec,
+                                                    gpointer user_data)
+{
+    (void)pspec;
+    NionApp *app = user_data;
+    if (!app || app->updating_site_controls)
+        return;
+
+    NionTab *tab = nion_current_tab(app);
+    const gchar *uri = tab ? webkit_web_view_get_uri(tab->web_view) : NULL;
+    gchar *key = nion_site_zoom_key_for_uri(uri);
+    if (!tab || !key || nion_content_filter_has_failed(app)) {
+        app->updating_site_controls = TRUE;
+        gtk_switch_set_active(GTK_SWITCH(object), TRUE);
+        app->updating_site_controls = FALSE;
+        g_free(key);
+        return;
+    }
+    g_free(key);
+
+    gboolean enabled = gtk_switch_get_active(GTK_SWITCH(object));
+    gboolean changed = nion_set_content_blocking_enabled(app, uri, enabled);
+    if (!changed && nion_content_blocking_enabled_for_uri(app, uri) != enabled) {
+        app->updating_site_controls = TRUE;
+        gtk_switch_set_active(GTK_SWITCH(object), !enabled);
+        app->updating_site_controls = FALSE;
+        nion_set_status(app, "● TOR CONNECTED — CONTENT-BLOCKING EXCEPTION LIMIT REACHED");
+        return;
+    }
+
+    if (!app->is_private)
+        nion_save_content_blocking(app);
+    nion_apply_content_blocking(tab, uri);
+    nion_update_site_info(app);
+
+    if (app->tor_ready) {
+        nion_set_status(app, enabled
+            ? "● TOR CONNECTED — CONTENT BLOCKING ENABLED FOR THIS SITE"
+            : "● TOR CONNECTED — CONTENT BLOCKING DISABLED FOR THIS SITE");
+    }
+
+    if (!tab->home_page && !tab->error_page)
+        webkit_web_view_reload(tab->web_view);
 }
 
 static void on_site_javascript_switch_notify(GObject *object,
@@ -3369,6 +3864,45 @@ static void on_site_javascript_switch_notify(GObject *object,
         webkit_web_view_reload(tab->web_view);
 }
 
+static void on_site_autoplay_switch_notify(GObject *object,
+                                            GParamSpec *pspec,
+                                            gpointer user_data)
+{
+    (void)pspec;
+    NionApp *app = user_data;
+    if (!app || app->updating_site_controls)
+        return;
+    NionTab *tab = nion_current_tab(app);
+    const gchar *uri = tab ? webkit_web_view_get_uri(tab->web_view) : NULL;
+    gchar *key = nion_site_zoom_key_for_uri(uri);
+    if (!tab || !key) {
+        app->updating_site_controls = TRUE;
+        gtk_switch_set_active(GTK_SWITCH(object), FALSE);
+        app->updating_site_controls = FALSE;
+        g_free(key);
+        return;
+    }
+    g_free(key);
+    gboolean allowed = gtk_switch_get_active(GTK_SWITCH(object));
+    gboolean changed = nion_set_autoplay_allowed_for_uri(app, uri, allowed);
+    if (!changed && nion_autoplay_allowed_for_uri(app, uri) != allowed) {
+        app->updating_site_controls = TRUE;
+        gtk_switch_set_active(GTK_SWITCH(object), !allowed);
+        app->updating_site_controls = FALSE;
+        nion_set_status(app, "● TOR CONNECTED — AUTOPLAY EXCEPTION LIMIT REACHED");
+        return;
+    }
+    if (!app->is_private)
+        nion_save_autoplay(app);
+    nion_update_site_info(app);
+    if (app->tor_ready)
+        nion_set_status(app, allowed
+            ? "● TOR CONNECTED — AUTOPLAY WITH SOUND ALLOWED FOR THIS SITE"
+            : "● TOR CONNECTED — AUDIBLE AUTOPLAY BLOCKED FOR THIS SITE");
+    if (!tab->home_page && !tab->error_page)
+        webkit_web_view_reload(tab->web_view);
+}
+
 static void on_site_permissions_reset_clicked(GtkButton *button, gpointer user_data)
 {
     (void)button;
@@ -3414,6 +3948,59 @@ static void on_site_permissions_reset_clicked(GtkButton *button, gpointer user_d
         nion_set_status(app, "● TOR CONNECTED — TEMPORARY SITE PERMISSIONS RESET");
 }
 
+static void nion_update_site_info_button(NionApp *app)
+{
+    if (!app || !app->site_info_button)
+        return;
+
+    NionTab *tab = nion_current_tab(app);
+    const gchar *uri = tab ? webkit_web_view_get_uri(tab->web_view) : NULL;
+    gboolean usable = tab && !tab->home_page && !tab->error_page && uri && *uri &&
+                      !g_str_equal(uri, "about:blank");
+    gtk_widget_set_sensitive(app->site_info_button, usable);
+    gtk_widget_remove_css_class(app->site_info_button, "nion-site-info-warning");
+
+    if (app->site_info_icon)
+        gtk_image_set_from_icon_name(GTK_IMAGE(app->site_info_icon),
+                                     "dialog-information-symbolic");
+    if (!usable) {
+        gtk_widget_set_tooltip_text(app->site_info_button,
+                                    "No website connection information");
+        return;
+    }
+
+    if (nion_tab_has_mixed_content(tab)) {
+        if (app->site_info_icon)
+            gtk_image_set_from_icon_name(GTK_IMAGE(app->site_info_icon),
+                                         "dialog-warning-symbolic");
+        gtk_widget_add_css_class(app->site_info_button, "nion-site-info-warning");
+        gtk_widget_set_tooltip_text(app->site_info_button,
+                                    "Site information — mixed content detected");
+    } else if (nion_content_filter_has_failed(app)) {
+        gtk_widget_set_tooltip_text(app->site_info_button,
+                                    "Site information — content filter unavailable");
+    } else {
+        gtk_widget_set_tooltip_text(app->site_info_button, "Site information");
+    }
+}
+
+static gboolean on_site_info_window_close_request(GtkWindow *window, gpointer user_data)
+{
+    (void)user_data;
+    gtk_widget_set_visible(GTK_WIDGET(window), FALSE);
+    return TRUE;
+}
+
+static void on_site_info_button_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    NionApp *app = user_data;
+    if (!app || !app->site_info_window)
+        return;
+    nion_update_site_info(app);
+    gtk_window_present(GTK_WINDOW(app->site_info_window));
+}
+
 static void nion_update_site_info(NionApp *app)
 {
     if (!app || !app->site_info_button)
@@ -3423,12 +4010,6 @@ static void nion_update_site_info(NionApp *app)
     const gchar *uri = tab ? webkit_web_view_get_uri(tab->web_view) : NULL;
     gboolean usable = tab && !tab->home_page && !tab->error_page && uri && *uri &&
                       !g_str_equal(uri, "about:blank");
-
-    gtk_widget_set_sensitive(app->site_info_button, usable);
-    gtk_widget_remove_css_class(app->site_info_button, "nion-site-info-warning");
-    if (app->site_info_icon)
-        gtk_image_set_from_icon_name(GTK_IMAGE(app->site_info_icon),
-                                     "dialog-information-symbolic");
 
     if (!usable) {
         if (app->site_info_title_label)
@@ -3442,6 +4023,8 @@ static void nion_update_site_info(NionApp *app)
                                app->tor_ready ? "Bundled Tor — connected" : "Bundled Tor — not ready");
         if (app->site_info_mixed_label)
             gtk_label_set_text(GTK_LABEL(app->site_info_mixed_label), "—");
+        if (app->site_info_tracking_label)
+            gtk_label_set_text(GTK_LABEL(app->site_info_tracking_label), "—");
         if (app->site_info_uri_label)
             gtk_label_set_text(GTK_LABEL(app->site_info_uri_label), "—");
         app->updating_site_controls = TRUE;
@@ -3449,9 +4032,21 @@ static void nion_update_site_info(NionApp *app)
             gtk_switch_set_active(GTK_SWITCH(app->site_info_javascript_switch), TRUE);
             gtk_widget_set_sensitive(app->site_info_javascript_switch, FALSE);
         }
+        if (app->site_info_content_blocking_switch) {
+            gtk_switch_set_active(GTK_SWITCH(app->site_info_content_blocking_switch), TRUE);
+            gtk_widget_set_sensitive(app->site_info_content_blocking_switch, FALSE);
+        }
+        if (app->site_info_autoplay_switch) {
+            gtk_switch_set_active(GTK_SWITCH(app->site_info_autoplay_switch), FALSE);
+            gtk_widget_set_sensitive(app->site_info_autoplay_switch, FALSE);
+        }
         app->updating_site_controls = FALSE;
         if (app->site_info_javascript_status_label)
             gtk_label_set_text(GTK_LABEL(app->site_info_javascript_status_label), "No website loaded");
+        if (app->site_info_content_blocking_status_label)
+            gtk_label_set_text(GTK_LABEL(app->site_info_content_blocking_status_label), "No website loaded");
+        if (app->site_info_autoplay_status_label)
+            gtk_label_set_text(GTK_LABEL(app->site_info_autoplay_status_label), "No website loaded");
         if (app->site_info_camera_label)
             gtk_label_set_text(GTK_LABEL(app->site_info_camera_label), "—");
         if (app->site_info_microphone_label)
@@ -3470,8 +4065,6 @@ static void nion_update_site_info(NionApp *app)
     GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_PARSE_RELAXED, &error);
     if (!parsed) {
         g_clear_error(&error);
-        gtk_widget_set_sensitive(app->site_info_button, FALSE);
-        gtk_widget_set_tooltip_text(app->site_info_button, "Connection information unavailable");
         return;
     }
 
@@ -3555,6 +4148,11 @@ static void nion_update_site_info(NionApp *app)
         gtk_label_set_text(GTK_LABEL(app->site_info_route_label), route);
     if (app->site_info_mixed_label)
         gtk_label_set_text(GTK_LABEL(app->site_info_mixed_label), mixed);
+    if (app->site_info_tracking_label)
+        gtk_label_set_text(GTK_LABEL(app->site_info_tracking_label),
+            app->block_third_party_cookies
+                ? "Strict third-party cookie blocking (ITP disabled)"
+                : "WebKit Intelligent Tracking Prevention (ITP) enabled");
     if (app->site_info_uri_label)
         gtk_label_set_text(GTK_LABEL(app->site_info_uri_label), uri);
 
@@ -3570,6 +4168,43 @@ static void nion_update_site_info(NionApp *app)
                            javascript_enabled
                                ? (app->is_private ? "Enabled — private memory-only rule" : "Enabled")
                                : (app->is_private ? "Disabled — private memory-only rule" : "Disabled for this site"));
+
+
+    gboolean content_blocking_enabled = nion_content_blocking_enabled_for_uri(app, uri);
+    gboolean filter_ready = nion_content_filter_is_ready(app);
+    gboolean filter_failed = nion_content_filter_has_failed(app);
+    app->updating_site_controls = TRUE;
+    if (app->site_info_content_blocking_switch) {
+        gtk_switch_set_active(GTK_SWITCH(app->site_info_content_blocking_switch),
+                              content_blocking_enabled);
+        gtk_widget_set_sensitive(app->site_info_content_blocking_switch,
+                                 !filter_failed);
+    }
+    app->updating_site_controls = FALSE;
+    if (app->site_info_content_blocking_status_label) {
+        const gchar *blocking_status = filter_failed
+            ? "Unavailable — bundled filter failed to compile"
+            : (!filter_ready
+                ? "Initializing bundled filter…"
+                : (content_blocking_enabled
+                    ? "Enabled — lightweight bundled rules"
+                    : "Disabled for this site"));
+        gtk_label_set_text(GTK_LABEL(app->site_info_content_blocking_status_label),
+                           blocking_status);
+    }
+
+    gboolean autoplay_allowed = nion_autoplay_allowed_for_uri(app, uri);
+    app->updating_site_controls = TRUE;
+    if (app->site_info_autoplay_switch) {
+        gtk_switch_set_active(GTK_SWITCH(app->site_info_autoplay_switch), autoplay_allowed);
+        gtk_widget_set_sensitive(app->site_info_autoplay_switch, TRUE);
+    }
+    app->updating_site_controls = FALSE;
+    if (app->site_info_autoplay_status_label)
+        gtk_label_set_text(GTK_LABEL(app->site_info_autoplay_status_label),
+            autoplay_allowed
+                ? (app->is_private ? "Allowed — private memory-only exception" : "Allowed for this site")
+                : "Audible autoplay blocked; muted autoplay allowed");
 
     gchar *origin = nion_web_origin_key_for_uri(uri);
     if (app->site_info_camera_label)
@@ -3594,23 +4229,6 @@ static void nion_update_site_info(NionApp *app)
     }
     g_free(origin);
 
-    if (nion_tab_has_mixed_content(tab)) {
-        if (app->site_info_icon)
-            gtk_image_set_from_icon_name(GTK_IMAGE(app->site_info_icon),
-                                         "dialog-warning-symbolic");
-        gtk_widget_add_css_class(app->site_info_button, "nion-site-info-warning");
-        gtk_widget_set_tooltip_text(app->site_info_button,
-                                    "Mixed content detected — open site information");
-    } else if (is_onion) {
-        gtk_widget_set_tooltip_text(app->site_info_button,
-                                    "Onion service connection information");
-    } else if (is_https) {
-        gtk_widget_set_tooltip_text(app->site_info_button,
-                                    "HTTPS connection information");
-    } else {
-        gtk_widget_set_tooltip_text(app->site_info_button,
-                                    "HTTP connection information");
-    }
 
     g_free(connection);
     g_free(host_text);
@@ -3647,7 +4265,9 @@ static void nion_update_controls(NionApp *app)
     nion_update_window_title(app, tab);
     nion_update_progress(app, tab);
     nion_update_onion_button(app);
-    nion_update_site_info(app);
+    nion_update_site_info_button(app);
+    if (app->site_info_window && gtk_widget_get_visible(app->site_info_window))
+        nion_update_site_info(app);
     nion_update_bookmark_button(app);
 }
 
@@ -5518,7 +6138,7 @@ static void on_http_warning_continue(GtkButton *button, gpointer user_data)
     g_free(tab->http_allowed_origin);
     tab->http_allowed_origin = origin;
 
-    webkit_policy_decision_use(tab->http_warning_decision);
+    nion_policy_decision_use_for_uri(tab, tab->http_warning_decision, tab->http_warning_uri);
     g_clear_object(&tab->http_warning_decision);
     g_clear_pointer(&tab->http_warning_uri, g_free);
     nion_close_http_warning(tab);
@@ -5696,8 +6316,10 @@ static gboolean on_webview_decide_policy(WebKitWebView *web_view,
         return TRUE;
     }
 
-    if (decision_type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION)
+    if (decision_type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
+        nion_apply_content_blocking(tab, uri);
         nion_apply_site_javascript(tab, uri);
+    }
 
     if (decision_type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION &&
         nion_uri_is_http_clearnet(uri)) {
@@ -5726,7 +6348,8 @@ static gboolean on_webview_decide_policy(WebKitWebView *web_view,
         g_clear_pointer(&tab->display_uri_override, g_free);
     }
 
-    return FALSE;
+    nion_policy_decision_use_for_uri(tab, decision, uri);
+    return TRUE;
 }
 
 
@@ -6168,11 +6791,17 @@ static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean s
     NionTab *tab = g_new0(NionTab, 1);
     tab->app = app;
 
+    WebKitUserContentManager *content_manager = webkit_user_content_manager_new();
+    WebKitWebsitePolicies *default_policies = related_view
+        ? g_object_ref(webkit_web_view_get_website_policies(related_view))
+        : nion_website_policies_for_uri(app, uri);
+    if (!default_policies)
+        default_policies = nion_website_policies_for_uri(app, uri);
     if (related_view) {
         /* Keep popup/new-tab views related to the opener for WebKit lifecycle
-         * and NetworkSession inheritance, but do not share the same mutable
-         * WebKitSettings object. Per-site JavaScript changes must never alter
-         * the opener tab's settings. */
+         * and NetworkSession inheritance, while keeping mutable Settings and
+         * UserContentManager tab-local. This is required for per-site JavaScript
+         * and content-blocking exceptions to coexist in different tabs. */
         WebKitSettings *settings = webkit_settings_new();
         nion_apply_privacy_settings(settings);
         webkit_settings_set_enable_javascript(
@@ -6182,8 +6811,8 @@ static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean s
             WEBKIT_TYPE_WEB_VIEW,
             "related-view", related_view,
             "settings", settings,
-            "user-content-manager", webkit_web_view_get_user_content_manager(related_view),
-            "website-policies", webkit_web_view_get_website_policies(related_view),
+            "user-content-manager", content_manager,
+            "website-policies", default_policies,
             NULL));
         g_object_unref(settings);
     } else {
@@ -6194,13 +6823,18 @@ static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean s
             WEBKIT_TYPE_WEB_VIEW,
             "network-session", app->network_session,
             "settings", settings,
+            "user-content-manager", content_manager,
+            "website-policies", default_policies,
             NULL));
         g_object_unref(settings);
     }
+    g_object_unref(default_policies);
+    g_object_unref(content_manager);
 
     tab->page = GTK_WIDGET(tab->web_view);
     g_object_set_data_full(G_OBJECT(tab->page), "nion-tab", tab, nion_tab_free);
     g_object_set_data(G_OBJECT(tab->web_view), "nion-tab-pointer", tab);
+    nion_apply_content_blocking(tab, uri);
 
     GtkWidget *label = nion_make_tab_label(tab);
     gint page_num = gtk_notebook_append_page(GTK_NOTEBOOK(app->notebook), tab->page, label);
@@ -6839,7 +7473,7 @@ static void action_preferences(GSimpleAction *action, GVariant *parameter, gpoin
     gtk_check_button_set_active(GTK_CHECK_BUTTON(restore), app->restore_session);
     gtk_box_append(GTK_BOX(box), restore);
 
-    GtkWidget *third_party = gtk_check_button_new_with_label("Block third-party cookies");
+    GtkWidget *third_party = gtk_check_button_new_with_label("Strictly block third-party cookies (disables WebKit ITP)");
     gtk_check_button_set_active(GTK_CHECK_BUTTON(third_party), app->block_third_party_cookies);
     gtk_box_append(GTK_BOX(box), third_party);
 
@@ -6862,7 +7496,7 @@ static void action_preferences(GSimpleAction *action, GVariant *parameter, gpoin
 
     GtkWidget *note = gtk_label_new(
         "Cookies and website data remain persistent between NiOn restarts so website logins can survive. "
-        "Blocking third-party cookies may affect some sign-in flows.");
+        "By default NiOn enables WebKit Intelligent Tracking Prevention (ITP). The strict third-party-cookie option disables ITP and can break some sign-in flows.");
     gtk_label_set_wrap(GTK_LABEL(note), TRUE);
     gtk_label_set_xalign(GTK_LABEL(note), 0.0f);
     gtk_widget_add_css_class(note, "nion-muted");
@@ -7231,6 +7865,19 @@ static void nion_clear_selected_local_data(NionClearDataRequest *request)
         }
     }
 
+    if (request->clear_content_blocking && app->content_blocking_disabled) {
+        g_hash_table_remove_all(app->content_blocking_disabled);
+        if (!app->is_private && app->content_blocking_file)
+            g_unlink(app->content_blocking_file);
+        nion_apply_content_filter_to_window(app);
+    }
+
+    if (request->clear_autoplay && app->autoplay_allowed_sites) {
+        g_hash_table_remove_all(app->autoplay_allowed_sites);
+        if (!app->is_private && app->autoplay_file)
+            g_unlink(app->autoplay_file);
+    }
+
     if (request->clear_permissions)
         nion_clear_all_temporary_permissions(app);
 
@@ -7272,15 +7919,20 @@ static void on_clear_data_confirm_clicked(GtkButton *button, gpointer user_data)
     GtkCheckButton *cache_check = g_object_get_data(G_OBJECT(button), "nion-clear-cache");
     GtkCheckButton *zoom_check = g_object_get_data(G_OBJECT(button), "nion-clear-zoom");
     GtkCheckButton *javascript_check = g_object_get_data(G_OBJECT(button), "nion-clear-javascript");
+    GtkCheckButton *content_blocking_check = g_object_get_data(G_OBJECT(button), "nion-clear-content-blocking");
+    GtkCheckButton *autoplay_check = g_object_get_data(G_OBJECT(button), "nion-clear-autoplay");
     GtkCheckButton *permissions_check = g_object_get_data(G_OBJECT(button), "nion-clear-permissions");
 
     gboolean clear_website = website_check && gtk_check_button_get_active(website_check);
     gboolean clear_cache = cache_check && gtk_check_button_get_active(cache_check);
     gboolean clear_zoom = zoom_check && gtk_check_button_get_active(zoom_check);
     gboolean clear_javascript = javascript_check && gtk_check_button_get_active(javascript_check);
+    gboolean clear_content_blocking = content_blocking_check && gtk_check_button_get_active(content_blocking_check);
+    gboolean clear_autoplay = autoplay_check && gtk_check_button_get_active(autoplay_check);
     gboolean clear_permissions = permissions_check && gtk_check_button_get_active(permissions_check);
 
-    if (!clear_website && !clear_cache && !clear_zoom && !clear_javascript && !clear_permissions) {
+    if (!clear_website && !clear_cache && !clear_zoom && !clear_javascript &&
+        !clear_content_blocking && !clear_autoplay && !clear_permissions) {
         nion_set_status(app, app->tor_ready
             ? "● TOR CONNECTED — NO BROWSING DATA SELECTED"
             : "○ TOR OFFLINE — NO BROWSING DATA SELECTED");
@@ -7291,6 +7943,8 @@ static void on_clear_data_confirm_clicked(GtkButton *button, gpointer user_data)
     request->app = app;
     request->clear_zoom = clear_zoom;
     request->clear_javascript = clear_javascript;
+    request->clear_content_blocking = clear_content_blocking;
+    request->clear_autoplay = clear_autoplay;
     request->clear_permissions = clear_permissions;
 
     if (clear_website && clear_cache) {
@@ -7379,7 +8033,7 @@ static void action_clear_data(GSimpleAction *action, GVariant *parameter, gpoint
 
     GtkWidget *message = gtk_label_new(app->is_private
         ? "Private website data is already ephemeral, but you can clear selected state before closing this Private Window."
-        : "Website data and cache are selected by default, matching NiOn's previous Clear Browsing Data behavior. Saved zoom and site-control rules are separate so they are never erased accidentally.");
+        : "Website data and cache are selected by default. Saved zoom, JavaScript, content-blocking, and autoplay exceptions are separate so they are never erased accidentally.");
     gtk_label_set_wrap(GTK_LABEL(message), TRUE);
     gtk_label_set_xalign(GTK_LABEL(message), 0.0f);
     gtk_box_append(GTK_BOX(box), message);
@@ -7402,6 +8056,18 @@ static void action_clear_data(GSimpleAction *action, GVariant *parameter, gpoint
             ? "Forget memory-only JavaScript overrides for this Private Window."
             : "Forget all persistent per-site JavaScript overrides. Open pages may need a reload before scripts run again.",
         FALSE);
+    GtkWidget *content_blocking_row = nion_browsing_data_check(
+        app->is_private ? "Private content-blocking exceptions" : "Saved content-blocking exceptions",
+        app->is_private
+            ? "Forget memory-only sites where content blocking was disabled in this Private Window."
+            : "Forget all persistent sites where lightweight content blocking was disabled.",
+        FALSE);
+    GtkWidget *autoplay_row = nion_browsing_data_check(
+        app->is_private ? "Private autoplay exceptions" : "Saved autoplay exceptions",
+        app->is_private
+            ? "Forget memory-only sites allowed to autoplay with sound in this Private Window."
+            : "Forget all persistent sites allowed to autoplay with sound.",
+        FALSE);
     GtkWidget *permissions_row = nion_browsing_data_check(
         "Temporary site permissions",
         "Revoke temporary camera, microphone, location, and notification grants in this window; active camera/microphone capture is stopped.",
@@ -7412,6 +8078,8 @@ static void action_clear_data(GSimpleAction *action, GVariant *parameter, gpoint
     if (!app->is_private)
         gtk_box_append(GTK_BOX(box), zoom_row);
     gtk_box_append(GTK_BOX(box), javascript_row);
+    gtk_box_append(GTK_BOX(box), content_blocking_row);
+    gtk_box_append(GTK_BOX(box), autoplay_row);
     gtk_box_append(GTK_BOX(box), permissions_row);
 
     GtkWidget *buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -7431,6 +8099,10 @@ static void action_clear_data(GSimpleAction *action, GVariant *parameter, gpoint
                       app->is_private ? NULL : g_object_get_data(G_OBJECT(zoom_row), "nion-check"));
     g_object_set_data(G_OBJECT(clear), "nion-clear-javascript",
                       g_object_get_data(G_OBJECT(javascript_row), "nion-check"));
+    g_object_set_data(G_OBJECT(clear), "nion-clear-content-blocking",
+                      g_object_get_data(G_OBJECT(content_blocking_row), "nion-check"));
+    g_object_set_data(G_OBJECT(clear), "nion-clear-autoplay",
+                      g_object_get_data(G_OBJECT(autoplay_row), "nion-check"));
     g_object_set_data(G_OBJECT(clear), "nion-clear-permissions",
                       g_object_get_data(G_OBJECT(permissions_row), "nion-check"));
 
@@ -7555,6 +8227,16 @@ static void action_privacy_audit(GSimpleAction *action, GVariant *parameter, gpo
         app->is_private
             ? "Private Window JavaScript overrides exist only in memory and disappear with the window."
             : "Disabled-site rules are stored locally in ~/.config/nion/site-javascript.ini and applied before navigation."));
+    gtk_box_append(GTK_BOX(box), nion_audit_row(
+        "Tracking prevention", app->block_third_party_cookies ? "STRICT COOKIES" : "ITP ENABLED",
+        app->block_third_party_cookies
+            ? "Strict third-party-cookie blocking is enabled; WebKit ITP is disabled because upstream WebKit supersedes that cookie policy while ITP is active."
+            : "WebKit Intelligent Tracking Prevention is enabled on this NetworkSession and handles tracking state/cookie restrictions at engine level."));
+    gtk_box_append(GTK_BOX(box), nion_audit_row(
+        "Autoplay protection", app->is_private ? "MEMORY-ONLY EXCEPTIONS" : "LOCAL EXCEPTIONS",
+        app->is_private
+            ? "Audible autoplay is blocked by default; per-site Allow exceptions exist only for this Private Window."
+            : "Audible autoplay is blocked by default while muted autoplay is allowed. Per-site Allow exceptions are stored in ~/.config/nion/autoplay.ini."));
     gtk_box_append(GTK_BOX(box), nion_audit_row(
         "Clipboard read", "BLOCKED",
         "JavaScript clipboard access is disabled and permission requests are denied."));
@@ -8255,6 +8937,9 @@ static void nion_prepare_dirs(NionApp *app)
     app->bookmarks_file = g_build_filename(app->data_dir, "bookmarks.ini", NULL);
     app->site_zoom_file = g_build_filename(app->config_dir, "site-zoom.ini", NULL);
     app->site_javascript_file = g_build_filename(app->config_dir, "site-javascript.ini", NULL);
+    app->content_blocking_file = g_build_filename(app->config_dir, "content-blocking.ini", NULL);
+    app->autoplay_file = g_build_filename(app->config_dir, "autoplay.ini", NULL);
+    app->content_filter_store_dir = g_build_filename(app->cache_dir, "content-filters", NULL);
     app->tor_runtime_file = g_build_filename(app->data_dir, "tor-runtime.ini", NULL);
 
     const gchar *downloads = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
@@ -8598,6 +9283,8 @@ static gboolean nion_free_private_app_idle(gpointer user_data)
         g_ptr_array_unref(app->bookmarks);
     if (app->site_javascript_disabled)
         g_hash_table_unref(app->site_javascript_disabled);
+    if (app->content_blocking_disabled)
+        g_hash_table_unref(app->content_blocking_disabled);
     if (app->temporary_permissions)
         g_hash_table_unref(app->temporary_permissions);
     if (app->closed_tabs)
@@ -8708,6 +9395,8 @@ static void nion_open_private_window(NionApp *source)
                                      : g_ptr_array_new_with_free_func(nion_bookmark_free);
     app->closed_tabs = g_queue_new();
     nion_load_site_javascript(app);
+    nion_load_content_blocking(app);
+    nion_load_autoplay(app);
 
     nion_private_sync_from_owner(app, owner);
     if (!nion_prepare_network(app)) {
@@ -8828,21 +9517,45 @@ static void nion_build_ui(NionApp *app)
     gtk_widget_add_css_class(app->onion_button, "nion-onion-badge");
     gtk_widget_set_visible(app->onion_button, FALSE);
 
-    app->site_info_button = gtk_menu_button_new();
+    /* Use a transient window instead of a GtkPopover. Overlay popovers above
+     * an accelerated WebKitGTK view can flicker badly on lightweight X11 WMs.
+     * A separate transient window avoids that compositing path completely. */
+    app->site_info_button = gtk_button_new();
     app->site_info_icon = gtk_image_new_from_icon_name("dialog-information-symbolic");
-    gtk_menu_button_set_child(GTK_MENU_BUTTON(app->site_info_button), app->site_info_icon);
-    gtk_menu_button_set_direction(GTK_MENU_BUTTON(app->site_info_button), GTK_ARROW_DOWN);
+    gtk_button_set_child(GTK_BUTTON(app->site_info_button), app->site_info_icon);
     gtk_widget_add_css_class(app->site_info_button, "flat");
     gtk_widget_set_sensitive(app->site_info_button, FALSE);
 
-    app->site_info_popover = gtk_popover_new();
-    gtk_popover_set_has_arrow(GTK_POPOVER(app->site_info_popover), TRUE);
+    app->site_info_window = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(app->site_info_window), "Site Information — NiOn");
+    gtk_window_set_transient_for(GTK_WINDOW(app->site_info_window), GTK_WINDOW(app->window));
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(app->site_info_window), TRUE);
+    /* Keep Site Information usable on small laptop displays.  The content
+     * grows as protections are added, so never let its natural height force
+     * the transient window beyond the screen.  GtkScrolledWindow owns the
+     * viewport and begins scrolling once the compact content height is hit. */
+    gtk_window_set_resizable(GTK_WINDOW(app->site_info_window), TRUE);
+    gtk_window_set_default_size(GTK_WINDOW(app->site_info_window), 420, 500);
+    GtkWidget *site_info_scroller = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(site_info_scroller),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(site_info_scroller), 360);
+    gtk_scrolled_window_set_max_content_width(GTK_SCROLLED_WINDOW(site_info_scroller), 420);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(site_info_scroller), FALSE);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(site_info_scroller), 280);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(site_info_scroller), 480);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(site_info_scroller), FALSE);
+    gtk_widget_set_hexpand(site_info_scroller, TRUE);
+    gtk_widget_set_vexpand(site_info_scroller, TRUE);
+
     GtkWidget *site_info_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     gtk_widget_set_margin_top(site_info_box, 14);
     gtk_widget_set_margin_bottom(site_info_box, 14);
     gtk_widget_set_margin_start(site_info_box, 14);
     gtk_widget_set_margin_end(site_info_box, 14);
-    gtk_widget_set_size_request(site_info_box, 390, -1);
+    /* Let the scrolled viewport determine width; do not impose an additional
+     * child request that can combine with margins into a wider toplevel. */
+    gtk_widget_set_size_request(site_info_box, -1, -1);
 
     app->site_info_title_label = gtk_label_new("Site information");
     gtk_label_set_xalign(GTK_LABEL(app->site_info_title_label), 0.0f);
@@ -8853,8 +9566,32 @@ static void nion_build_ui(NionApp *app)
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Connection", &app->site_info_connection_label));
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Route", &app->site_info_route_label));
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Mixed content", &app->site_info_mixed_label));
+    gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Tracking protection", &app->site_info_tracking_label));
 
     gtk_box_append(GTK_BOX(site_info_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    GtkWidget *content_blocking_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    GtkWidget *content_blocking_text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *content_blocking_title = gtk_label_new("Content blocking");
+    app->site_info_content_blocking_status_label = gtk_label_new("Initializing bundled filter…");
+    gtk_label_set_xalign(GTK_LABEL(content_blocking_title), 0.0f);
+    gtk_label_set_xalign(GTK_LABEL(app->site_info_content_blocking_status_label), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(app->site_info_content_blocking_status_label), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(app->site_info_content_blocking_status_label), PANGO_WRAP_WORD_CHAR);
+    gtk_label_set_width_chars(GTK_LABEL(app->site_info_content_blocking_status_label), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(app->site_info_content_blocking_status_label), 42);
+    gtk_widget_add_css_class(content_blocking_title, "nion-site-info-key");
+    gtk_widget_add_css_class(app->site_info_content_blocking_status_label, "nion-site-info-value");
+    gtk_widget_set_hexpand(content_blocking_text, TRUE);
+    gtk_box_append(GTK_BOX(content_blocking_text), content_blocking_title);
+    gtk_box_append(GTK_BOX(content_blocking_text), app->site_info_content_blocking_status_label);
+    app->site_info_content_blocking_switch = gtk_switch_new();
+    gtk_widget_set_valign(app->site_info_content_blocking_switch, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(content_blocking_row), content_blocking_text);
+    gtk_box_append(GTK_BOX(content_blocking_row), app->site_info_content_blocking_switch);
+    gtk_box_append(GTK_BOX(site_info_box), content_blocking_row);
+    g_signal_connect(app->site_info_content_blocking_switch, "notify::active",
+                     G_CALLBACK(on_site_content_blocking_switch_notify), app);
+
     GtkWidget *javascript_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     GtkWidget *javascript_text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
     GtkWidget *javascript_title = gtk_label_new("JavaScript");
@@ -8862,6 +9599,10 @@ static void nion_build_ui(NionApp *app)
     gtk_label_set_xalign(GTK_LABEL(javascript_title), 0.0f);
     gtk_label_set_xalign(GTK_LABEL(app->site_info_javascript_status_label), 0.0f);
     gtk_widget_add_css_class(javascript_title, "nion-site-info-key");
+    gtk_label_set_wrap(GTK_LABEL(app->site_info_javascript_status_label), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(app->site_info_javascript_status_label), PANGO_WRAP_WORD_CHAR);
+    gtk_label_set_width_chars(GTK_LABEL(app->site_info_javascript_status_label), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(app->site_info_javascript_status_label), 42);
     gtk_widget_add_css_class(app->site_info_javascript_status_label, "nion-site-info-value");
     gtk_widget_set_hexpand(javascript_text, TRUE);
     gtk_box_append(GTK_BOX(javascript_text), javascript_title);
@@ -8873,6 +9614,29 @@ static void nion_build_ui(NionApp *app)
     gtk_box_append(GTK_BOX(site_info_box), javascript_row);
     g_signal_connect(app->site_info_javascript_switch, "notify::active",
                      G_CALLBACK(on_site_javascript_switch_notify), app);
+
+    GtkWidget *autoplay_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    GtkWidget *autoplay_text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *autoplay_title = gtk_label_new("Allow autoplay with sound");
+    app->site_info_autoplay_status_label = gtk_label_new("Audible autoplay blocked; muted autoplay allowed");
+    gtk_label_set_xalign(GTK_LABEL(autoplay_title), 0.0f);
+    gtk_label_set_xalign(GTK_LABEL(app->site_info_autoplay_status_label), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(app->site_info_autoplay_status_label), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(app->site_info_autoplay_status_label), PANGO_WRAP_WORD_CHAR);
+    gtk_label_set_width_chars(GTK_LABEL(app->site_info_autoplay_status_label), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(app->site_info_autoplay_status_label), 42);
+    gtk_widget_add_css_class(autoplay_title, "nion-site-info-key");
+    gtk_widget_add_css_class(app->site_info_autoplay_status_label, "nion-site-info-value");
+    gtk_widget_set_hexpand(autoplay_text, TRUE);
+    gtk_box_append(GTK_BOX(autoplay_text), autoplay_title);
+    gtk_box_append(GTK_BOX(autoplay_text), app->site_info_autoplay_status_label);
+    app->site_info_autoplay_switch = gtk_switch_new();
+    gtk_widget_set_valign(app->site_info_autoplay_switch, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(autoplay_row), autoplay_text);
+    gtk_box_append(GTK_BOX(autoplay_row), app->site_info_autoplay_switch);
+    gtk_box_append(GTK_BOX(site_info_box), autoplay_row);
+    g_signal_connect(app->site_info_autoplay_switch, "notify::active",
+                     G_CALLBACK(on_site_autoplay_switch_notify), app);
 
     GtkWidget *permissions_title = gtk_label_new("Temporary site permissions");
     gtk_label_set_xalign(GTK_LABEL(permissions_title), 0.0f);
@@ -8893,9 +9657,15 @@ static void nion_build_ui(NionApp *app)
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Address", &app->site_info_uri_label));
     gtk_label_set_selectable(GTK_LABEL(app->site_info_uri_label), TRUE);
     gtk_label_set_wrap(GTK_LABEL(app->site_info_uri_label), TRUE);
-    gtk_label_set_max_width_chars(GTK_LABEL(app->site_info_uri_label), 52);
-    gtk_popover_set_child(GTK_POPOVER(app->site_info_popover), site_info_box);
-    gtk_menu_button_set_popover(GTK_MENU_BUTTON(app->site_info_button), app->site_info_popover);
+    gtk_label_set_wrap_mode(GTK_LABEL(app->site_info_uri_label), PANGO_WRAP_CHAR);
+    gtk_label_set_width_chars(GTK_LABEL(app->site_info_uri_label), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(app->site_info_uri_label), 48);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(site_info_scroller), site_info_box);
+    gtk_window_set_child(GTK_WINDOW(app->site_info_window), site_info_scroller);
+    g_signal_connect(app->site_info_window, "close-request",
+                     G_CALLBACK(on_site_info_window_close_request), app);
+    g_signal_connect(app->site_info_button, "clicked",
+                     G_CALLBACK(on_site_info_button_clicked), app);
 
     app->address = gtk_entry_new();
     app->bookmark_button = gtk_button_new_from_icon_name("non-starred-symbolic");
@@ -9121,6 +9891,8 @@ static void nion_cleanup(NionApp *app)
                 g_clear_pointer(&private_app->bookmarks_file, g_free);
                 if (private_app->bookmarks) g_ptr_array_unref(private_app->bookmarks);
                 if (private_app->site_javascript_disabled) g_hash_table_unref(private_app->site_javascript_disabled);
+                if (private_app->content_blocking_disabled) g_hash_table_unref(private_app->content_blocking_disabled);
+                if (private_app->autoplay_allowed_sites) g_hash_table_unref(private_app->autoplay_allowed_sites);
                 if (private_app->temporary_permissions) g_hash_table_unref(private_app->temporary_permissions);
                 if (private_app->closed_tabs) g_queue_free_full(private_app->closed_tabs, nion_closed_tab_free);
                 g_free(private_app);
@@ -9148,6 +9920,9 @@ static void nion_cleanup(NionApp *app)
     g_clear_pointer(&app->bookmarks_file, g_free);
     g_clear_pointer(&app->site_zoom_file, g_free);
     g_clear_pointer(&app->site_javascript_file, g_free);
+    g_clear_pointer(&app->content_blocking_file, g_free);
+    g_clear_pointer(&app->autoplay_file, g_free);
+    g_clear_pointer(&app->content_filter_store_dir, g_free);
     g_clear_pointer(&app->tor_runtime_file, g_free);
     g_clear_pointer(&app->tor_proxy_uri, g_free);
     g_clear_pointer(&app->tor_binary_path, g_free);
@@ -9165,6 +9940,19 @@ static void nion_cleanup(NionApp *app)
         g_hash_table_unref(app->site_javascript_disabled);
         app->site_javascript_disabled = NULL;
     }
+    if (app->content_blocking_disabled) {
+        g_hash_table_unref(app->content_blocking_disabled);
+        app->content_blocking_disabled = NULL;
+    }
+    if (app->autoplay_allowed_sites) {
+        g_hash_table_unref(app->autoplay_allowed_sites);
+        app->autoplay_allowed_sites = NULL;
+    }
+    if (app->content_filter) {
+        webkit_user_content_filter_unref(app->content_filter);
+        app->content_filter = NULL;
+    }
+    g_clear_object(&app->content_filter_store);
     if (app->temporary_permissions) {
         g_hash_table_unref(app->temporary_permissions);
         app->temporary_permissions = NULL;
@@ -9208,6 +9996,9 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     nion_load_bookmarks(app);
     nion_load_site_zoom(app);
     nion_load_site_javascript(app);
+    nion_load_content_blocking(app);
+    nion_load_autoplay(app);
+    nion_prepare_content_filter(app);
     gboolean tor_port_ok = nion_choose_tor_port(app);
     if (!nion_prepare_network(app)) {
         g_critical("NiOn could not create its WebKit network session");

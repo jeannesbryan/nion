@@ -6,9 +6,13 @@ SRC=src/main.c
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 pass(){ echo "PASS: $*"; }
 
-[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "1.4.0" ]] || fail "manifest version is not 1.4.0"
-grep -Eq '^(Stable|Privacy Controls & Reliability)' release/manifest/RELEASE_STATUS || fail "1.4.0 release status incompatible"
-pass "1.4.0 Site Controls manifest compatibility"
+version="$(tr -d '\r\n' < release/manifest/NION_VERSION)"
+python3 - "$version" <<'PYV' || fail "current version predates the 1.4.0 Site Controls baseline"
+import sys
+parts=lambda v: tuple(int(x) for x in v.split('.'))
+raise SystemExit(0 if parts(sys.argv[1]) >= parts('1.4.0') else 1)
+PYV
+pass "1.4.0 Site Controls feature baseline"
 
 grep -Fq 'webkit_settings_set_enable_webrtc(settings, FALSE);' "$SRC" || fail "WebRTC peer connections not disabled"
 grep -Fq 'webkit_settings_set_enable_media_stream(settings, TRUE);' "$SRC" || fail "MediaStream permission path not enabled"
@@ -42,4 +46,4 @@ grep -Fq 'g_strcmp0(candidate_origin, origin) == 0' "$SRC" || fail "origin-wide 
 grep -Fq 'g_hash_table_remove_all(app->temporary_permissions)' "$SRC" || fail "Tor-failure temporary permission purge missing"
 pass "permission reset revokes matching captures"
 
-echo 'NION 1.4.0 STAGE 1 SITE CONTROLS: PASS'
+echo 'NION 1.4.0+ SITE CONTROLS REGRESSION: PASS'

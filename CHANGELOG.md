@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.5.0 — 2026-07-26
+
+### Lightweight Content Blocking
+
+- Added a deliberately small bundled JSON ruleset for common third-party advertising/tracking endpoints. Rules are compiled and enforced by WebKit's native `WebKitUserContentFilterStore` / `WebKitUserContentManager` pipeline; NiOn does not add an extension engine, daemon, or background list updater.
+- Blocking is on by default for normal web pages and intentionally excludes top-level document blocking to reduce breakage.
+- Added a **Content blocking** switch and status row to Site Information. Normal per-site disable exceptions persist in bounded atomic `~/.config/nion/content-blocking.ini`; Private Window exceptions remain memory-only.
+- Added content-blocking exception clearing to Browsing Data for both normal and private contexts.
+- Gave each WebView its own `WebKitUserContentManager` so per-tab/site filter state remains isolated while popup/new-window WebViews still use WebKitGTK 6 `related-view` and inherit the opener's Tor-backed network session.
+- Embedded the ruleset in the NiOn GResource and added a dedicated Stage 1 regression test plus release-preflight coverage.
+
+### Tracking & Media Protection
+
+- Enabled WebKit Intelligent Tracking Prevention (ITP) by default on NiOn network sessions. The existing strict third-party-cookie option remains available as an explicit alternative and disables ITP to avoid WebKit's documented policy supersession.
+- Added native WebKit autoplay protection using `WebKitWebsitePolicies`: audible autoplay is blocked by default while muted autoplay is allowed.
+- Added a per-site **Allow autoplay with sound** control. Normal exceptions persist in bounded/atomic `~/.config/nion/autoplay.ini`; Private Window exceptions are memory-only.
+- Applied autoplay policy at WebKit navigation-policy acceptance time with `webkit_policy_decision_use_with_policies()` and added autoplay-exception clearing to Browsing Data.
+
+### Site Information reliability
+
+- Replaced the Site Information `GtkMenuButton`/`GtkPopover` overlay entirely with a plain toolbar `GtkButton` that opens a transient Site Information window. This avoids popover-over-WebKit compositing, which continued to flicker on the tested lightweight X11 desktop even after earlier child/refresh fixes. The final 1.5.0 window is compact, resizable, and vertically scrollable so it remains usable on small displays.
+- The transient window keeps the existing TLS/Tor/mixed-content/permission/JavaScript/content-blocking information and now also reports tracking-protection and autoplay state.
+
+### Final hardening & release
+
+- Added a bounded `GtkScrolledWindow` to Site Information so its growing security/privacy controls cannot force the transient window off-screen.
+- Re-audited content filtering, ITP/strict-cookie mode, autoplay policy, JavaScript/permission controls, normal/private state separation, Tor fail-closed handling, popup/context-menu paths, recovery/data controls, and centralized release metadata.
+- Promoted 1.5.0 release metadata to Stable. Feature development is paused after 1.5.0; subsequent work is maintenance and bug fixes unless the roadmap is explicitly reopened.
+
 ## 1.4.0 — 2026-07-26
 
 ### Site Controls

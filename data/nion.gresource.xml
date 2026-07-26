@@ -2,5 +2,6 @@
 <gresources>
   <gresource prefix="/io/github/jeannesbryan/Nion">
     <file alias="icons/scalable/apps/io.github.jeannesbryan.Nion.svg">nion.svg</file>
+    <file>content-blocking.json</file>
   </gresource>
 </gresources>

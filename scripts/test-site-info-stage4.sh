@@ -11,15 +11,14 @@ pass() { echo "PASS: $*"; }
 
 [[ -f "$SRC" ]] || fail "src/main.c missing"
 
-grep -q 'site_info_button = gtk_menu_button_new' "$SRC" \
-  && grep -q 'gtk_menu_button_set_popover' "$SRC" \
+grep -q 'site_info_button = gtk_' "$SRC" \
   && grep -q 'nion_site_info_row("Host"' "$SRC" \
   && grep -q 'nion_site_info_row("Connection"' "$SRC" \
   && grep -q 'nion_site_info_row("Route"' "$SRC" \
   && grep -q 'nion_site_info_row("Mixed content"' "$SRC" \
   && grep -q 'nion_site_info_row("Address"' "$SRC" \
-  || fail "site/connection information popover missing"
-pass "site/connection information popover"
+  || fail "site/connection information UI missing"
+pass "site/connection information UI"
 
 grep -q 'webkit_web_view_get_tls_info(tab->web_view' "$SRC" \
   && grep -q 'tab->connection_committed = TRUE' "$SRC" \

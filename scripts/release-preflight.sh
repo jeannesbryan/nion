@@ -100,7 +100,11 @@ for test in \
   scripts/test-docs-stage5.sh \
   scripts/test-site-controls-stage1.sh \
   scripts/test-recovery-data-stage2.sh \
-  scripts/test-hardening-stage3.sh; do
+  scripts/test-hardening-stage3.sh \
+  scripts/test-content-blocking-stage1.sh \
+  scripts/test-tracking-media-stage2.sh \
+  scripts/test-hardening-stage3-1.5.0.sh \
+  scripts/test-site-info-width-fix.sh; do
   if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
 done
 

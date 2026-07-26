@@ -13,19 +13,27 @@ if grep -q 'webkit_web_view_new_with_related_view' "$SRC"; then
     fail 'removed WebKitGTK 6 constructor webkit_web_view_new_with_related_view is still used'
 fi
 
-# Per-site JavaScript requires mutable settings to be tab-local. Keep the
-# related-view lifecycle/session relationship, but use a fresh hardened settings
-# object seeded with the opener's current JavaScript state.
+# Per-site JavaScript and content-blocking exceptions require mutable settings
+# and the UserContentManager to be tab-local. Keep the related-view lifecycle /
+# NetworkSession relationship, but attach independent hardened page controls.
 grep -q 'WebKitSettings \*settings = webkit_settings_new();' "$SRC" || \
     fail 'popup does not create independent hardened WebKit settings'
 grep -q 'webkit_settings_get_enable_javascript(webkit_web_view_get_settings(related_view))' "$SRC" || \
     fail 'popup does not seed JavaScript state from opener'
 grep -q '"settings", settings' "$SRC" || \
     fail 'popup independent settings are not attached'
-grep -q '"user-content-manager", webkit_web_view_get_user_content_manager(related_view)' "$SRC" || \
-    fail 'popup does not preserve opener user-content manager'
-grep -q '"website-policies", webkit_web_view_get_website_policies(related_view)' "$SRC" || \
+grep -q 'WebKitUserContentManager \*content_manager = webkit_user_content_manager_new();' "$SRC" || \
+    fail 'popup/tab does not create an independent user-content manager'
+grep -q '"user-content-manager", content_manager' "$SRC" || \
+    fail 'popup independent user-content manager is not attached'
+if grep -q '"website-policies", webkit_web_view_get_website_policies(related_view)' "$SRC"; then
+    :
+elif grep -q 'g_object_ref(webkit_web_view_get_website_policies(related_view))' "$SRC" && \
+     grep -q '"website-policies", default_policies' "$SRC"; then
+    :
+else
     fail 'popup does not preserve opener website policies'
+fi
 grep -q 'nion_new_tab_internal(app, "", TRUE, web_view)' "$SRC" || \
     fail 'WebView::create does not pass the opener as related_view'
 

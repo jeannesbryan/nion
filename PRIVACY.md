@@ -37,9 +37,12 @@ Typical persistent locations:
 ~/.config/nion/
   preferences.ini
   site-zoom.ini
+  site-javascript.ini
+  content-blocking.ini
 
 ~/.cache/nion/
   WebKit cache...
+  content-filters/ (compiled bundled filter cache)
 ```
 
 This means normal browsing can leave local evidence such as cookies, site data, bookmarks, tab/session URLs, download history, per-site zoom keys, per-site JavaScript rules, and cached browser data.
@@ -125,6 +128,24 @@ Bookmarks are stored locally in `~/.local/share/nion/bookmarks.ini`.
 
 Bookmark search is performed locally/in memory against stored titles and URLs. NiOn does not send the search query to a website or search engine merely to filter the bookmark list.
 
+## Lightweight content blocking
+
+NiOn 1.5.0 uses WebKit's native declarative content-filter engine with a small ruleset bundled inside the application resources. The rules currently target common third-party advertising/tracking endpoints and intentionally avoid top-level-document blocking.
+
+There is no runtime remote-list download or background filter updater. Updating the bundled ruleset is part of updating NiOn itself. Normal per-site disable exceptions are stored in bounded, atomic `~/.config/nion/content-blocking.ini`; this file can reveal hostnames where the user disabled filtering. Private Window therefore keeps its exceptions only in memory and never reads the normal exception file.
+
+WebKit may cache the compiled representation under `~/.cache/nion/content-filters/`. That cache is derived from NiOn's bundled ruleset, not a record of which pages were visited.
+
+Content blocking is defense-in-depth only. It does not guarantee that all trackers, advertisements, malware, fingerprinting, first-party tracking, or newly created domains are blocked, and a blocked third-party resource can break a website feature. Disabling blocking for a site should therefore be treated as a compatibility exception, not as a change to Tor routing.
+
+## Intelligent Tracking Prevention and autoplay
+
+NiOn 1.5.0 enables WebKit Intelligent Tracking Prevention (ITP) by default. ITP is an engine-level tracking defense and is separate from NiOn's bundled content-filter rules. The legacy strict third-party-cookie option is kept as an alternative: when it is enabled NiOn disables ITP and uses blanket `ACCEPT_NO_THIRD_PARTY`, because WebKit documents that ITP otherwise supersedes that cookie policy.
+
+Audible autoplay is blocked by default using WebKit website policies while muted autoplay is allowed for compatibility. Normal per-site **Allow autoplay with sound** exceptions are stored in bounded atomic `~/.config/nion/autoplay.ini`, which can reveal hostnames where the user created an exception. Private Window keeps autoplay exceptions only in memory and never reads the normal file.
+
+Neither ITP nor autoplay protection changes Tor routing. They are defense-in-depth and compatibility controls, not anonymity guarantees.
+
 ## Per-site JavaScript
 
 Normal browsing stores only explicit **disabled** JavaScript site rules in `~/.config/nion/site-javascript.ini`. The store is bounded, written atomically, and can reveal hostnames for which JavaScript was disabled.
@@ -192,7 +213,7 @@ Normal-window session snapshots contain URLs and bounded WebKit session state. A
 
 ## Browsing Data Manager
 
-The normal profile can selectively clear WebKit website data/cache, saved per-site zoom, persistent per-site JavaScript rules, and temporary permission grants. Temporary permission clearing also stops active camera/microphone capture. In Private Window, site JavaScript rules and permission grants are memory-only; clearing them does not write them into the normal profile.
+The normal profile can selectively clear WebKit website data/cache, saved per-site zoom, persistent per-site JavaScript rules, content-blocking exceptions, autoplay exceptions, and temporary permission grants. Temporary permission clearing also stops active camera/microphone capture. In Private Window, site JavaScript rules and permission grants are memory-only; clearing them does not write them into the normal profile.
 
 ## 1.4.0 final audit note
 
