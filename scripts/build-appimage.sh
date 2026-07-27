@@ -18,6 +18,19 @@ done
 pkg-config --exists "gtk4 >= $NION_GTK_MIN_VERSION" || { echo "gtk4 >= $NION_GTK_MIN_VERSION not found" >&2; exit 1; }
 pkg-config --exists "webkitgtk-6.0 >= $NION_WEBKITGTK_MIN_VERSION" || { echo "webkitgtk-6.0 >= $NION_WEBKITGTK_MIN_VERSION not found" >&2; exit 1; }
 
+# The minimum versions above are compatibility floors, not release-toolchain pins.
+# Warn when the build host is outside the stable branches selected for this
+# release so a development GTK/GLib stack is not bundled accidentally.
+gtk_build_version="$(pkg-config --modversion gtk4)"
+webkit_build_version="$(pkg-config --modversion webkitgtk-6.0)"
+glib_build_version="$(pkg-config --modversion glib-2.0)"
+gtk_stable_series="${NION_GTK_TESTED_VERSION%.*}"
+webkit_stable_series="${NION_WEBKITGTK_TESTED_VERSION%.*}"
+glib_stable_series="${NION_GLIB_TESTED_VERSION%.*}"
+[[ "$gtk_build_version" == "$gtk_stable_series".* ]] || echo "WARNING: GTK $gtk_build_version is outside the preferred stable $gtk_stable_series.x release branch (baseline $NION_GTK_TESTED_VERSION)." >&2
+[[ "$webkit_build_version" == "$webkit_stable_series".* ]] || echo "WARNING: WebKitGTK $webkit_build_version is outside the preferred stable $webkit_stable_series.x release branch (baseline $NION_WEBKITGTK_TESTED_VERSION)." >&2
+[[ "$glib_build_version" == "$glib_stable_series".* ]] || echo "WARNING: GLib $glib_build_version is outside the preferred stable $glib_stable_series.x release branch (baseline $NION_GLIB_TESTED_VERSION)." >&2
+
 # Always ask the verified fetcher to validate the canonical Tor bundle pin.
 # It exits without downloading when runtime/tor already matches the manifest.
 ./scripts/fetch-tor-runtime.sh
@@ -136,6 +149,11 @@ ln -sfn usr/share/icons/hicolor/scalable/apps/io.github.jeannesbryan.Nion.svg \
   echo "ReleaseStatus=$NION_RELEASE_STATUS"
   echo "Tor=$NION_TOR_DAEMON_VERSION"
   echo "TorBrowserExpertBundle=$NION_TOR_BROWSER_VERSION"
+  echo "GTKMinimum=$NION_GTK_MIN_VERSION"
+  echo "WebKitGTKMinimum=$NION_WEBKITGTK_MIN_VERSION"
+  echo "GTKStableBaseline=$NION_GTK_TESTED_VERSION"
+  echo "WebKitGTKStableBaseline=$NION_WEBKITGTK_TESTED_VERSION"
+  echo "GLibStableBaseline=$NION_GLIB_TESTED_VERSION"
   echo "GTK=$(pkg-config --modversion gtk4)"
   echo "WebKitGTK=$(pkg-config --modversion webkitgtk-6.0)"
   echo "libsoup=$(pkg-config --modversion libsoup-3.0)"

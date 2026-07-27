@@ -7,8 +7,12 @@ fail(){ echo "TRACKING/MEDIA STAGE 2: FAIL: $*" >&2; exit 1; }
 pass(){ echo "PASS: $*"; }
 
 [[ -s release/manifest/NION_VERSION ]] || fail "canonical NiOn version manifest missing"
-status="$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)"
-[[ "$status" == 'Tracking & Content Protection development — Stage 2' || "$status" == 'Stable' ]] || fail "Stage 2/final release status missing"
+version="$(tr -d '\r\n' < release/manifest/NION_VERSION)"
+python3 - "$version" <<'PYV' || fail "current version predates the 1.5.0 tracking/media baseline"
+import sys
+parts=lambda v: tuple(int(x) for x in v.split('.'))
+raise SystemExit(0 if parts(sys.argv[1]) >= parts('1.5.0') else 1)
+PYV
 
 grep -Fq 'webkit_network_session_set_itp_enabled(app->network_session, TRUE)' "$SRC" || fail "WebKit ITP default enable path missing"
 grep -Fq 'WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS' "$SRC" || fail "ITP-compatible cookie policy missing"

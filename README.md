@@ -2,9 +2,9 @@
 
 NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens both clearnet and Tor v3 `.onion` sites through its own bundled Tor runtime and is designed to fail closed rather than silently fall back to a direct connection.
 
-**Stable release: 1.6.0**  
+**Stable release: 1.7.0**  
+**Project focus after 1.7.0: maintenance, compatibility, privacy/security fixes, and bug fixes.**  
 **Platform: GNU/Linux x86_64 AppImage**
-**Project focus after 1.6.0: maintenance and bug fixes.**
 
 > NiOn is not Tor Browser. It does not claim Tor Browser-grade anonymity, anti-fingerprinting, or browser-hardening guarantees.
 
@@ -12,7 +12,7 @@ NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens b
 
 - Routes clearnet and `.onion` browsing through bundled Tor.
 - Blocks new web navigation when Tor is unavailable or the Tor child process fails.
-- Supports multiple tabs, session restore, crash-safe recovery choices, pinned tabs, closed-tab recovery, bookmarks, downloads, per-site zoom, page find, printing/PDF, site information, temporary site permissions, per-site JavaScript control, lightweight native content blocking, WebKit tracking prevention, and autoplay protection.
+- Supports multiple tabs, session restore, crash-safe recovery choices, pinned tabs, closed-tab recovery, bookmarks, downloads, per-site zoom, page find, printing/PDF, site information, temporary site permissions, per-site JavaScript control, lightweight native content blocking, WebKit tracking prevention, autoplay protection, selectable Security Levels, external-protocol confirmation, and popup/window escape hardening.
 - Keeps normal cookies and website data persistent so ordinary login sessions can survive restarts.
 - Provides a separate Private Window backed by an ephemeral WebKit network session.
 - Detects Onion-Location advertisements and can open the advertised onion service in a new tab.
@@ -94,10 +94,33 @@ HTTPS certificate errors remain strict-fail. For `.onion` services NiOn distingu
 
 Site controls are also available here:
 
-- JavaScript can be enabled/disabled per site. Normal-window rules persist locally; Private Window rules are memory-only.
+- JavaScript can be enabled/disabled per site. Standard/Safer default to enabled; Safest defaults to disabled and supports explicit per-site enable exceptions. Normal-window rules persist locally; Private Window rules are memory-only.
 - Camera, microphone, geolocation, and notifications are blocked by default and can be **Allowed temporarily** for the current origin.
 - Temporary permission grants last only for the current NiOn window and can be reset from Site Information.
 - Screen/display capture and permission classes outside this scoped UI remain blocked.
+
+### Security Levels
+
+NiOn 1.7.0 introduces a global Security Level in **Preferences**. The levels only tighten NiOn's existing hardening; selecting Standard never re-enables WebRTC, WebGL, WebAudio, JavaScript clipboard access, or automatic JavaScript popups.
+
+- **Standard** — the NiOn compatibility baseline: JavaScript enabled by default, camera/microphone MediaStream remains behind the temporary permission gate, page fullscreen is available, audible autoplay is blocked while muted autoplay is allowed.
+- **Safer** — keeps JavaScript and permission-gated MediaStream available, disables page-controlled fullscreen, and blocks all autoplay unless the current site has an explicit autoplay exception.
+- **Safest** — additionally disables JavaScript and MediaStream by default. JavaScript can still be explicitly enabled for an individual site from Site Information.
+
+Changing Security Level reloads open website tabs and revokes temporary permission grants. Private Windows inherit the global level but keep their per-site JavaScript/autoplay exceptions memory-only. Site Information displays the effective level for the current window.
+
+### Escape guards
+
+NiOn keeps ordinary `http://` and `https://` navigation inside the Tor-routed browser. Stage 2 adds an explicit boundary for actions that would leave NiOn:
+
+- `file:`, `javascript:`, `data:`, `blob:`, `about:`, and NiOn internal `nion:` targets are never handed to desktop applications.
+- Other external schemes such as `mailto:`, `tel:`, `magnet:`, `steam:`, or custom application schemes require a **direct user gesture** and a confirmation dialog.
+- The confirmation warns that the external application is outside NiOn and may access the network without Tor.
+- External-protocol requests without a user gesture are blocked silently at the policy layer.
+- New-window actions also require a WebKit user gesture. User-clicked `target="_blank"` links continue to open as NiOn tabs, while script-driven popup/window escape attempts are rejected.
+- WebKit's `javascript-can-open-windows-automatically` setting remains disabled at every Security Level; the Stage 2 policy gate is defense in depth rather than a relaxation of that baseline.
+
+External applications are intentionally outside NiOn's Tor-only guarantee. Confirming an external protocol is an explicit choice to cross that boundary.
 
 ### Lightweight content blocking
 
@@ -118,9 +141,9 @@ NiOn enables **WebKit Intelligent Tracking Prevention (ITP)** by default on norm
 
 Autoplay protection uses WebKit website policies:
 
-- audible autoplay is blocked by default;
-- muted autoplay remains allowed for compatibility;
-- **Site Information → Allow autoplay with sound** adds an exception for the current site;
+- Standard blocks audible autoplay while allowing muted autoplay;
+- Safer/Safest block all autoplay by default;
+- **Site Information → Allow autoplay for this site** adds an exception for the current site;
 - normal exceptions persist in `~/.config/nion/autoplay.ini`;
 - Private Window exceptions are memory-only;
 - **Browsing Data…** can clear normal/private autoplay exceptions.
@@ -157,7 +180,8 @@ NiOn is intentionally Tor-only for web traffic. Important safeguards include:
 - no intentional direct-network fallback;
 - lightweight third-party content filtering through WebKit's native content-filter engine;
 - WebKit Intelligent Tracking Prevention by default;
-- audible autoplay blocked by default while muted autoplay remains allowed;
+- global Standard / Safer / Safest Security Levels that only tighten the existing hardening baseline;
+- Security-Level-aware autoplay policy, with explicit per-site exceptions;
 - dead loopback SOCKS replacement after Tor failure;
 - navigation blocking while Tor is offline;
 - WebRTC peer connections disabled;
@@ -170,6 +194,16 @@ NiOn is intentionally Tor-only for web traffic. Important safeguards include:
 The Private Window additionally verifies at runtime that its WebKit network session is ephemeral and that persistent credential storage is disabled.
 
 See [PRIVACY.md](PRIVACY.md) for the threat model and limitations.
+
+## Release dependency baseline
+
+NiOn keeps compatibility floors separate from the stable toolchain baseline used for 1.7.0 release validation:
+
+- minimum GTK: 4.10; stable baseline: GTK 4.22.4;
+- minimum WebKitGTK: 2.40; stable baseline: WebKitGTK 2.52.5;
+- stable GLib baseline: 2.88.2.
+
+The AppImage records the actual GTK/WebKitGTK/GLib versions present on the build host in its bundled `BUILD-INFO`; these baseline values do not artificially raise NiOn's minimum API requirements.
 
 ## Strengths
 
@@ -184,7 +218,7 @@ See [PRIVACY.md](PRIVACY.md) for the threat model and limitations.
 
 - NiOn is **not Tor Browser** and should not be treated as providing the same anti-fingerprinting/anonymity protections.
 - Current production AppImage target is x86_64 Linux.
-- Website compatibility can be reduced by privacy hardening such as disabled WebRTC peer connections, WebGL, WebAudio, or content blocking; temporarily allowing camera, microphone, geolocation, or notifications can expose sensitive information to that site.
+- Website compatibility can be reduced by privacy hardening such as disabled WebRTC peer connections, WebGL, WebAudio, content blocking, or the Safer/Safest Security Levels; temporarily allowing camera, microphone, geolocation, or notifications can expose sensitive information to that site.
 - The bundled content-blocking list is deliberately small and can miss trackers or occasionally break third-party site features; use the per-site switch when needed.
 - A completed download, saved/printed PDF, bookmark, or text copied to the system clipboard can outlive a Private Window because it was explicitly exported outside the ephemeral session.
 - Normal browsing intentionally persists cookies/site data and therefore leaves local state unless the user clears it.
@@ -228,17 +262,23 @@ Replacing the AppImage is designed to reuse these paths. Malformed NiOn-owned me
 
 Private Window data does not use these normal persistence paths for private website/session/download state.
 
+## 1.7.0 development plan
+
+- **Stage 1 — Security Levels ✅**: Standard / Safer / Safest, persistent global preference, Site Information visibility, per-site JavaScript integration, Private Window inheritance.
+- **Stage 2 — Escape Guards ✅**: direct-user-gesture external-protocol confirmation plus popup/new-window policy hardening.
+- **Stage 3 — Hardening & Stable**: compatibility/privacy regression audit and final 1.7.0 release.
+
 ## Run the AppImage
 
 ```bash
-chmod +x NiOn-1.6.0-x86_64.AppImage
-./NiOn-1.6.0-x86_64.AppImage
+chmod +x NiOn-1.7.0-x86_64.AppImage
+./NiOn-1.7.0-x86_64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.6.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.7.0-x86_64.AppImage
 ```
 
 ## Build from source
@@ -261,8 +301,8 @@ Build the production AppImage with:
 Expected output:
 
 ```text
-dist/NiOn-1.6.0-x86_64.AppImage
-dist/NiOn-1.6.0-x86_64.AppImage.sha256
+dist/NiOn-1.7.0-x86_64.AppImage
+dist/NiOn-1.7.0-x86_64.AppImage.sha256
 ```
 
 See [BUILDING.md](BUILDING.md) for the complete build/release procedure and [TESTING.md](TESTING.md) for runtime validation.

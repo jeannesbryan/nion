@@ -14,6 +14,10 @@ grep -Fq "version: files('release/manifest/NION_VERSION')" meson.build || fail "
 grep -Fq "fs.read('release/manifest/TOR_DAEMON_VERSION')" meson.build || fail "Meson is not reading canonical Tor daemon version"
 grep -Fq "conf.set_quoted('NION_TOR_DAEMON_VERSION'" meson.build || fail "Tor daemon version is not generated into config.h"
 grep -Fq "conf.set_quoted('NION_RELEASE_STATUS'" meson.build || fail "release status is not generated into config.h"
+grep -Fq "fs.read('release/manifest/GTK_TESTED_VERSION')" meson.build || fail "GTK stable baseline is not manifest-driven"
+grep -Fq "fs.read('release/manifest/WEBKITGTK_TESTED_VERSION')" meson.build || fail "WebKitGTK stable baseline is not manifest-driven"
+grep -Fq "fs.read('release/manifest/GLIB_TESTED_VERSION')" meson.build || fail "GLib stable baseline is not manifest-driven"
+grep -Fq "conf.set_quoted('NION_GTK_TESTED_VERSION'" meson.build || fail "GTK stable baseline is not generated into config.h"
 pass "Meson/config.h integration"
 
 grep -Fq '@NION_VERSION@' data/io.github.jeannesbryan.Nion.metainfo.xml.in || fail "AppStream version placeholder missing"
@@ -34,7 +38,8 @@ done
 pass "release/runtime scripts consume manifest"
 
 # Release-critical implementation files must not pin these values directly.
-for literal_file in NION_VERSION TOR_BROWSER_VERSION TOR_DAEMON_VERSION TOR_SIGNING_FINGERPRINT APPIMAGE_ARCH; do
+for literal_file in NION_VERSION TOR_BROWSER_VERSION TOR_DAEMON_VERSION TOR_SIGNING_FINGERPRINT APPIMAGE_ARCH \
+  GTK_MIN_VERSION WEBKITGTK_MIN_VERSION GTK_TESTED_VERSION WEBKITGTK_TESTED_VERSION GLIB_TESTED_VERSION; do
   [[ -s "release/manifest/$literal_file" ]] || fail "missing release/manifest/$literal_file"
 done
 

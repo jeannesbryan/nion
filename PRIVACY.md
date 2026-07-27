@@ -93,6 +93,30 @@ The same principle applies to:
 
 NiOn cannot truthfully erase those external artifacts merely by closing Private Window.
 
+## Security Levels
+
+NiOn 1.7.0 adds a global Standard / Safer / Safest preference. Security Levels are intentionally monotonic: they may tighten NiOn's existing browser hardening, but Standard does not re-enable surfaces that NiOn already blocks.
+
+- Standard keeps the 1.6.0 compatibility baseline.
+- Safer additionally disables page-controlled fullscreen and denies autoplay unless the site has an explicit local exception.
+- Safest additionally disables JavaScript and MediaStream by default. A per-site JavaScript enable exception can be stored in the normal profile or kept memory-only in Private Window.
+
+Changing level revokes temporary permission grants and stops active camera/microphone capture before website tabs reload under the new policy. Private Windows inherit the global level but never persist private site exceptions.
+
+## External application boundary
+
+NiOn's Tor-only guarantee applies to web traffic handled inside NiOn. An operating-system application launched through a non-web URI scheme is outside that boundary and may use the host network directly.
+
+Stage 2 therefore applies an escape guard:
+
+- HTTP and HTTPS stay inside NiOn.
+- `file:`, `javascript:`, `data:`, `blob:`, `about:`, and `nion:` are never delegated to the desktop.
+- Other schemes require a direct WebKit user gesture plus an explicit **Open Anyway** confirmation.
+- Requests without a user gesture are blocked, including script-driven external-protocol and new-window attempts.
+- User-clicked `target="_blank"` links remain inside NiOn as related tabs.
+
+Choosing **Open Anyway** deliberately leaves NiOn's control. The launched application is not forced through Tor by NiOn.
+
 ## Browser hardening
 
 NiOn currently applies practical restrictions including:
@@ -226,3 +250,9 @@ A WebKit web-process crash is isolated from the NiOn GTK application where WebKi
 ## Forget This Site
 
 **Forget This Site…** is intentionally broader than **Clear Data for This Site…**. In addition to targeted WebKit website data, it removes NiOn's per-site zoom, JavaScript override, content-blocking exception, autoplay exception, temporary permission grants, and temporary HTTP allowance for matching tabs. It does **not** remove bookmarks, download history, or files already exported to disk, because those are explicit user-owned artifacts rather than website state.
+
+## Security Levels and escape boundaries
+
+NiOn 1.7.0 Security Levels only tighten the existing privacy baseline. Standard does not re-enable WebRTC, WebGL, WebAudio, automatic JavaScript popups, or JavaScript clipboard access. Safer/Safest add stronger restrictions on fullscreen, autoplay, JavaScript, and MediaStream according to the selected level.
+
+HTTP(S) stays inside NiOn's Tor-routed WebKit session. A non-web external URI may be delegated to the desktop only after a direct user gesture and explicit confirmation; once opened externally, that application is outside NiOn's Tor guarantee. Automatic external-protocol attempts and automatic new-window attempts are blocked.

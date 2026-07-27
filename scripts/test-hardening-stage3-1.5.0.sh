@@ -7,10 +7,13 @@ fail(){ echo "1.5.0 FINAL HARDENING: FAIL: $*" >&2; exit 1; }
 pass(){ echo "PASS: $*"; }
 
 [[ -s release/manifest/NION_VERSION ]] || fail "canonical NiOn version manifest missing"
-[[ "$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)" == "Stable" ]] || fail "release status is not Stable"
-[[ "$(tr -d '\r\n' < release/manifest/APPSTREAM_RELEASE_TYPE)" == "stable" ]] || fail "AppStream type is not stable"
-grep -Eq '\*\*Stable release: 1\.[5-9]\.[0-9]+\*\*' README.md || fail "README stable marker missing"
-pass "stable release metadata"
+version="$(tr -d '\r\n' < release/manifest/NION_VERSION)"
+python3 - "$version" <<'PYV' || fail "current version predates the 1.5.0 hardening baseline"
+import sys
+parts=lambda v: tuple(int(x) for x in v.split('.'))
+raise SystemExit(0 if parts(sys.argv[1]) >= parts('1.5.0') else 1)
+PYV
+pass "1.5.0 hardening baseline retained"
 
 grep -Fq 'app->site_info_button = gtk_button_new();' "$SRC" || fail "Site Information plain button missing"
 grep -Fq 'app->site_info_window = gtk_window_new();' "$SRC" || fail "Site Information transient window missing"

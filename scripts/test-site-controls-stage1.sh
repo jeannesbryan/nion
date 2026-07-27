@@ -15,7 +15,7 @@ PYV
 pass "1.4.0 Site Controls feature baseline"
 
 grep -Fq 'webkit_settings_set_enable_webrtc(settings, FALSE);' "$SRC" || fail "WebRTC peer connections not disabled"
-grep -Fq 'webkit_settings_set_enable_media_stream(settings, TRUE);' "$SRC" || fail "MediaStream permission path not enabled"
+grep -Fq 'webkit_settings_set_enable_media_stream(settings, level != NION_SECURITY_SAFEST);' "$SRC" || fail "MediaStream permission/Safest policy missing"
 grep -Fq 'WEBKIT_IS_GEOLOCATION_PERMISSION_REQUEST(request)' "$SRC" || fail "geolocation permission gate missing"
 grep -Fq 'WEBKIT_IS_NOTIFICATION_PERMISSION_REQUEST(request)' "$SRC" || fail "notification permission gate missing"
 grep -Fq 'WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(request)' "$SRC" || fail "camera/microphone permission gate missing"

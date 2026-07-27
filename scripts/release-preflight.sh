@@ -24,6 +24,8 @@ else
 fi
 [[ "$VERSION" == "$(tr -d '\r\n' < release/manifest/NION_VERSION)" ]] && pass 'NiOn version loaded from manifest' || failmsg 'NiOn manifest version mismatch'
 [[ "$NION_APPIMAGE_BASENAME" == "NiOn-${VERSION}-${NION_APPIMAGE_ARCH}.AppImage" ]] && pass 'AppImage name derived from manifest' || failmsg 'AppImage name derivation mismatch'
+[[ -n "$NION_GTK_TESTED_VERSION" && -n "$NION_WEBKITGTK_TESTED_VERSION" && -n "$NION_GLIB_TESTED_VERSION" ]] && \
+  pass 'stable dependency baseline loaded from manifest' || failmsg 'stable dependency baseline missing'
 
 printf '\n== Release metadata ==\n'
 grep -Fq "version: files('release/manifest/NION_VERSION')" meson.build && pass 'Meson reads canonical version file' || failmsg 'Meson version source mismatch'
@@ -107,7 +109,10 @@ for test in \
   scripts/test-site-info-width-fix.sh \
   scripts/test-web-process-recovery-1.6.0.sh \
   scripts/test-forget-site-1.6.0.sh \
-  scripts/test-hardening-1.6.0.sh; do
+  scripts/test-hardening-1.6.0.sh \
+  scripts/test-security-levels-stage1.sh \
+  scripts/test-escape-guards-stage2.sh \
+  scripts/test-hardening-stage3-1.7.0.sh; do
   if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
 done
 
@@ -129,6 +134,18 @@ if [[ -x runtime/tor/tor ]]; then
   fi
 else
   warn 'Tor runtime not prepared yet; run ./scripts/fetch-tor-runtime.sh'
+fi
+
+printf '\n== Build-host dependency provenance ==\n'
+if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists gtk4 webkitgtk-6.0 glib-2.0; then
+  host_gtk="$(pkg-config --modversion gtk4)"
+  host_webkit="$(pkg-config --modversion webkitgtk-6.0)"
+  host_glib="$(pkg-config --modversion glib-2.0)"
+  printf 'INFO  host GTK=%s (stable baseline %s)\n' "$host_gtk" "$NION_GTK_TESTED_VERSION"
+  printf 'INFO  host WebKitGTK=%s (stable baseline %s)\n' "$host_webkit" "$NION_WEBKITGTK_TESTED_VERSION"
+  printf 'INFO  host GLib=%s (stable baseline %s)\n' "$host_glib" "$NION_GLIB_TESTED_VERSION"
+else
+  warn 'GTK/WebKitGTK/GLib pkg-config metadata unavailable; build host versions not checked'
 fi
 
 printf '\n== Native build ==\n'

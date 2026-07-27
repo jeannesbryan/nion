@@ -1,6 +1,67 @@
-# NiOn 1.4.0 Testing
+# NiOn Testing
 
-This document is the runtime checklist for the NiOn 1.4.0 Stable release. Static scripts are useful guards, but they do not replace live testing on the Linux system used to build/release the AppImage.
+## NiOn 1.7.0 final release validation
+
+Before publishing `v1.7.0`, run the full static preflight and then validate the final native/AppImage build on the stable release toolchain when practical (GTK 4.22.4, WebKitGTK 2.52.5, GLib 2.88.2). A newer stable patch release is acceptable; GTK 4.23.x and GLib 2.89.x are development branches and should be treated as compatibility-testing environments rather than the preferred release baseline.
+
+Final live smoke test:
+
+1. Standard / Safer / Safest behave as documented and survive restart.
+2. User-clicked `target=_blank` still opens inside NiOn; automatic popup attempts remain blocked.
+3. A user-clicked external protocol requires **Cancel / Open Anyway**; an automatic external-protocol attempt is blocked.
+4. Tor failure still blocks new navigation and active downloads without direct fallback.
+5. Normal/Private persistence boundaries remain intact.
+6. Site Information fits the screen, scrolls correctly, and reports effective security/tracking/autoplay state.
+7. Web-process crash recovery and startup crash recovery both remain usable.
+8. Forget This Site resets the complete site state without deleting bookmarks/downloaded files.
+9. Build the AppImage, verify SHA-256, run the packaged diagnostic, and repeat a short clearnet + `.onion` smoke test from the AppImage itself.
+
+Static final guard:
+
+```bash
+./scripts/test-hardening-stage3-1.7.0.sh
+./scripts/release-preflight.sh
+```
+
+## NiOn 1.7.0 Stage 2 — Escape Guards
+
+Before moving to Stage 3, validate both escape boundaries on normal and Private windows:
+
+1. Click a normal `target="_blank"` link: it must still open as a NiOn tab.
+2. Trigger a script popup without a user gesture: no new tab/window may appear and NiOn should report **POPUP BLOCKED**.
+3. Click a `mailto:` or another installed external-protocol link: NiOn must show **Cancel / Open Anyway** before the desktop handler is invoked.
+4. Cancel the external-protocol dialog: no external application should open.
+5. Confirm **Open Anyway**: the desktop handler may open, and NiOn must clearly report that the action is outside its Tor guarantee.
+6. Try an automatic/script-driven external protocol: it must be blocked without a confirmation prompt.
+7. Verify `file:`, `javascript:`, `data:`, `blob:`, `about:` and `nion:` are not delegated to desktop applications.
+8. Repeat `target=_blank`, external-protocol and popup checks in Private Window.
+9. Re-run Tor-offline/fail-closed, context-menu, download, crash-recovery, Forget This Site, Site Information sizing, Home→Back, and Security Levels scenarios.
+
+Static guard:
+
+```bash
+./scripts/test-escape-guards-stage2.sh
+```
+
+## NiOn 1.7.0 Stage 1 — Security Levels
+
+Stage 1 baseline validation for all three levels on normal and Private windows:
+
+1. **Standard**: JavaScript works normally, muted autoplay can start, page fullscreen remains available, and camera/mic requests still reach NiOn's temporary permission prompt.
+2. **Safer**: JavaScript remains enabled, page fullscreen is unavailable, and autoplay is denied unless the site has an explicit autoplay exception.
+3. **Safest**: JavaScript and MediaStream are disabled by default; Site Information can explicitly enable JavaScript for one site.
+4. Change level with several tabs open: website tabs reload, temporary permission grants are revoked, and active camera/microphone capture stops.
+5. Open a Private Window: it inherits the global level, but its JavaScript/autoplay exceptions disappear when that Private Window closes.
+6. Restart normal NiOn: the selected Security Level persists in preferences.
+7. Re-run Tor-offline/fail-closed, target=_blank, context-menu, download, crash-recovery, Forget This Site, Site Information sizing, and Home→Back scenarios.
+
+Static guard:
+
+```bash
+./scripts/test-security-levels-stage1.sh
+```
+
+This document is the runtime checklist for the current NiOn source tree. Static scripts are useful guards, but they do not replace live testing on the Linux system used to build or release the AppImage.
 
 ## 1. Static regression suite
 
@@ -278,21 +339,21 @@ Build first:
 Then:
 
 ```bash
-./scripts/test-appimage.sh dist/NiOn-1.6.0-x86_64.AppImage
+./scripts/test-appimage.sh dist/NiOn-1.7.0-x86_64.AppImage
 cd dist
-sha256sum -c NiOn-1.6.0-x86_64.AppImage.sha256
+sha256sum -c NiOn-1.7.0-x86_64.AppImage.sha256
 ```
 
 Run the artifact:
 
 ```bash
-./NiOn-1.6.0-x86_64.AppImage
+./NiOn-1.7.0-x86_64.AppImage
 ```
 
 or without FUSE:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.6.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.7.0-x86_64.AppImage
 ```
 
 Repeat the critical smoke tests against the AppImage itself: Tor bootstrap, clearnet, `.onion`, target-blank/new-tab, context menu, persistent normal session, Private Window ephemerality, and normal/private downloads.

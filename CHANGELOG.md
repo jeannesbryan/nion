@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.7.0 — Stable
+
+- Finalized **Security Levels & Escape Guards** after the Stage 1/2 runtime validation cycle.
+- Kept minimum API requirements at GTK 4.10 and WebKitGTK 2.40 instead of unnecessarily raising distro compatibility requirements.
+- Added centralized stable dependency-baseline metadata for GTK 4.22.4, WebKitGTK 2.52.5, and GLib 2.88.2; About and AppImage `BUILD-INFO` expose baseline/actual runtime provenance separately.
+- Final release guidance prefers stable GTK/GLib branches over GTK 4.23.x / GLib 2.89.x development branches.
+- Added a final 1.7.0 hardening regression guard and integrated it into release preflight.
+- Completed final audit of Security Levels, external-protocol escape boundary, popup/new-window user-gesture enforcement, normal/private persistence, Tor fail-closed behavior, content/tracking protection, crash recovery, Site Information sizing, and manifest/source-archive integrity.
+
+- Added **External Protocol Guard**: HTTP/HTTPS stay inside NiOn; selected non-web schemes require a direct user gesture plus an explicit Cancel/Open Anyway warning before the desktop handler can run.
+- Kept `file:`, `javascript:`, `data:`, `blob:`, `about:`, and `nion:` out of desktop delegation.
+- External-protocol requests without a user gesture are blocked at WebKit policy level, and the confirmation explicitly states that external applications are outside NiOn's Tor guarantee.
+- Added popup/new-window defense in depth: `NEW_WINDOW_ACTION` and the WebView `create` callback both require `webkit_navigation_action_is_user_gesture()`, while user-clicked `target=_blank` continues to open in a related NiOn tab.
+- Kept automatic JavaScript window opening disabled at every Security Level.
+- Added Stage 2 static regression coverage and release-preflight integration.
+- Added global **Security Levels**: Standard, Safer, and Safest.
+- Standard preserves NiOn 1.6.0's existing privacy baseline; levels only tighten settings and never re-enable WebRTC, WebGL, WebAudio, JavaScript clipboard access, or automatic JavaScript popups.
+- Safer disables page-controlled fullscreen and blocks all autoplay by default while keeping JavaScript and permission-gated MediaStream available.
+- Safest additionally disables JavaScript and MediaStream by default.
+- Expanded per-site JavaScript persistence to support explicit enable exceptions required by Safest while remaining backward-compatible with format-1 disabled-site rules.
+- Security Level is persisted in Preferences, inherited by Private Windows, shown in Site Information/Privacy Audit, and applied to all open tabs when changed.
+- Changing level revokes temporary permissions, stops camera/microphone capture, reloads active website tabs, and keeps Tor/fail-closed routing unchanged.
+
 ## 1.6.0 — 2026-07-27
 
 ### Reliability & Site Privacy

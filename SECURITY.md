@@ -21,3 +21,7 @@ Security-relevant areas include:
 - AppImage/WebKit subprocess packaging behavior.
 
 See `PRIVACY.md` and `TESTING.md` for current limitations and validation procedures.
+
+## External protocol boundary
+
+Non-web URI schemes can invoke applications outside NiOn. NiOn 1.7.0 requires a direct user gesture and explicit confirmation before supported external schemes are handed to the desktop. `file:`, `javascript:`, `data:`, `blob:`, `about:`, and `nion:` remain non-delegable. A confirmed external application is outside NiOn's Tor-routing guarantee and should be treated as a separate trust boundary.
