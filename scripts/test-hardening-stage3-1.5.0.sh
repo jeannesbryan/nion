@@ -6,10 +6,10 @@ SRC=src/main.c
 fail(){ echo "1.5.0 FINAL HARDENING: FAIL: $*" >&2; exit 1; }
 pass(){ echo "PASS: $*"; }
 
-[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "1.5.0" ]] || fail "manifest version is not 1.5.0"
+[[ -s release/manifest/NION_VERSION ]] || fail "canonical NiOn version manifest missing"
 [[ "$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)" == "Stable" ]] || fail "release status is not Stable"
 [[ "$(tr -d '\r\n' < release/manifest/APPSTREAM_RELEASE_TYPE)" == "stable" ]] || fail "AppStream type is not stable"
-grep -Fq '**Stable release: 1.5.0**' README.md || fail "README stable marker missing"
+grep -Eq '\*\*Stable release: 1\.[5-9]\.[0-9]+\*\*' README.md || fail "README stable marker missing"
 pass "stable release metadata"
 
 grep -Fq 'app->site_info_button = gtk_button_new();' "$SRC" || fail "Site Information plain button missing"

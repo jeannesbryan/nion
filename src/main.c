@@ -117,6 +117,12 @@ struct _NionTab {
      * the page that was active before Home so Back behaves like a browser Home
      * button without turning the internal page into a network navigation. */
     WebKitBackForwardListItem *home_return_item;
+
+    /* A WebKit WebProcess failure must not take down the browser UI. Keep the
+     * last real page URI so the tab can show a local recovery page and later
+     * recreate the navigation through the same Tor-gated WebView. */
+    gboolean web_process_terminated;
+    gchar *web_process_uri;
 };
 
 struct _NionBookmark {
@@ -136,6 +142,7 @@ struct _NionClearSiteRequest {
     gchar *uri;
     WebKitWebView *web_view;
     GList *website_data;
+    gboolean forget_site;
 };
 
 struct _NionPermissionPrompt {
@@ -186,6 +193,7 @@ struct _NionApp {
     GtkWidget *site_info_geolocation_label;
     GtkWidget *site_info_notifications_label;
     GtkWidget *site_info_permissions_reset_button;
+    GtkWidget *site_info_forget_button;
     gboolean updating_site_controls;
     GtkWidget *bookmark_button;
     GtkWidget *new_tab_button;
@@ -316,6 +324,8 @@ static gboolean nion_restore_saved_session(NionApp *app);
 static void nion_start_pending_restores(NionApp *app);
 static void nion_show_crash_recovery_prompt(NionApp *app);
 static void nion_prepare_normal_navigation(NionTab *tab);
+static void nion_reload_crashed_tab(NionTab *tab);
+static void nion_close_http_warning(NionTab *tab);
 static void nion_load_uri(NionTab *tab, const gchar *uri);
 static void nion_stop_all_web_activity(NionApp *app);
 static void nion_apply_privacy_settings(WebKitSettings *settings);
@@ -326,6 +336,7 @@ static void nion_store_tor_log(NionApp *app, const gchar *line);
 static void nion_update_onion_button(NionApp *app);
 static void nion_update_site_info(NionApp *app);
 static void nion_update_site_info_button(NionApp *app);
+static void nion_show_site_data_dialog(NionApp *app, gboolean forget_site);
 static void nion_detect_onion_location(NionTab *tab);
 static void nion_show_downloads(NionApp *app);
 static void nion_save_download_history(NionApp *app);
@@ -1591,7 +1602,9 @@ static void nion_save_session(NionApp *app, gboolean clean_shutdown)
             strlen(uri) <= NION_MAX_SAVED_URI_BYTES)
             g_key_file_set_string(session, group, "uri", uri);
 
-        if (!tab->home_page) {
+        /* Never persist the synthetic WebProcess recovery page as opaque
+         * WebKit history state. The original URL above is enough to recover. */
+        if (!tab->home_page && !tab->web_process_terminated) {
             WebKitWebViewSessionState *state = webkit_web_view_get_session_state(tab->web_view);
             if (state) {
                 GBytes *bytes = webkit_web_view_session_state_serialize(state);
@@ -2598,6 +2611,48 @@ static gchar *nion_error_html(const gchar *category,
     return html;
 }
 
+static const gchar *nion_web_process_reason_text(WebKitWebProcessTerminationReason reason)
+{
+    switch (reason) {
+    case WEBKIT_WEB_PROCESS_CRASHED:
+        return "The WebKit web process for this tab crashed.";
+    case WEBKIT_WEB_PROCESS_EXCEEDED_MEMORY_LIMIT:
+        return "The WebKit web process was stopped after exceeding its memory limit.";
+    case WEBKIT_WEB_PROCESS_TERMINATED_BY_API:
+        return "The WebKit web process was terminated.";
+    default:
+        return "The WebKit web process ended unexpectedly.";
+    }
+}
+
+static gchar *nion_web_process_recovery_html(WebKitWebProcessTerminationReason reason,
+                                              const gchar *uri)
+{
+    gchar *safe_reason = g_markup_escape_text(nion_web_process_reason_text(reason), -1);
+    gchar *safe_uri = g_markup_escape_text(uri ? uri : "", -1);
+    gchar *html = g_strdup_printf(
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta name='color-scheme' content='light dark'><title>Tab crashed — NiOn</title>"
+        "<style>:root{color-scheme:light dark;--bg:#f5f5f5;--card:#fff;--fg:#171717;--muted:#666;--border:#d9d9d9;--soft:#ededed}"
+        "@media(prefers-color-scheme:dark){:root{--bg:#101010;--card:#181818;--fg:#eee;--muted:#aaa;--border:#333;--soft:#222}}"
+        "*{box-sizing:border-box}html,body{height:100%%;margin:0;font-family:system-ui,sans-serif}"
+        "body{display:grid;place-items:center;background:var(--bg);color:var(--fg);padding:24px}"
+        "main{width:min(680px,100%%);border:1px solid var(--border);background:var(--card);border-radius:14px;padding:24px}"
+        ".tag{text-transform:uppercase;letter-spacing:.08em;font-size:.72rem;color:var(--muted);font-weight:700}"
+        "h1{font-size:1.8rem;margin:.55rem 0 1rem}p{line-height:1.6;color:var(--muted)}"
+        "code{display:block;overflow-wrap:anywhere;padding:.65rem .75rem;border-radius:8px;background:var(--soft);color:var(--fg)}"
+        "a{display:inline-block;margin-top:1rem;padding:.65rem .9rem;border:1px solid var(--border);border-radius:8px;color:var(--fg);text-decoration:none;font-weight:700}"
+        "</style></head><body><main><div class='tag'>Web process recovery</div>"
+        "<h1>This tab stopped unexpectedly</h1><p>%s</p><p><code>%s</code></p>"
+        "<p>NiOn itself is still running. Reloading creates a fresh WebKit process and keeps the normal Tor-only navigation checks.</p>"
+        "<a href='nion://reload-crashed/'>Reload Tab</a></main></body></html>",
+        safe_reason, safe_uri);
+    g_free(safe_reason);
+    g_free(safe_uri);
+    return html;
+}
+
 static void nion_clear_retry(NionTab *tab)
 {
     if (tab->retry_source_id) {
@@ -2611,6 +2666,8 @@ static void nion_prepare_normal_navigation(NionTab *tab)
 {
     nion_clear_retry(tab);
     g_clear_object(&tab->home_return_item);
+    tab->web_process_terminated = FALSE;
+    g_clear_pointer(&tab->web_process_uri, g_free);
     tab->home_page = FALSE;
     tab->error_page = FALSE;
     tab->load_failed = FALSE;
@@ -2672,6 +2729,33 @@ static void nion_load_home(NionTab *tab)
     webkit_web_view_set_zoom_level(tab->web_view, 1.0);
     webkit_web_view_load_html(tab->web_view, html, "about:blank");
     g_free(html);
+}
+
+static void nion_reload_crashed_tab(NionTab *tab)
+{
+    if (!tab || !tab->web_process_terminated)
+        return;
+
+    gchar *uri = g_strdup(tab->web_process_uri);
+    NionApp *app = tab->app;
+
+    if (uri && *uri && (!app || !app->tor_ready)) {
+        if (app)
+            nion_set_status(app, "○ TOR OFFLINE — CRASHED TAB RELOAD BLOCKED");
+        g_free(uri);
+        return;
+    }
+
+    nion_prepare_normal_navigation(tab);
+    if (uri && *uri) {
+        nion_set_status(app, "● TOR CONNECTED — RELOADING CRASHED TAB");
+        webkit_web_view_load_uri(tab->web_view, uri);
+    } else {
+        nion_load_home(tab);
+    }
+    g_free(uri);
+    if (app)
+        nion_update_controls(app);
 }
 
 static void nion_refresh_home_pages(NionApp *app)
@@ -2883,11 +2967,7 @@ static void on_forward_clicked(GtkButton *button, gpointer user_data)
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
     if (tab && app->tor_ready) {
-        nion_clear_retry(tab);
-        tab->home_page = FALSE;
-        tab->error_page = FALSE;
-        tab->load_failed = FALSE;
-        g_clear_pointer(&tab->display_uri_override, g_free);
+        nion_prepare_normal_navigation(tab);
         webkit_web_view_go_forward(tab->web_view);
     }
 }
@@ -2898,6 +2978,10 @@ static void on_reload_clicked(GtkButton *button, gpointer user_data)
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
     if (tab && app->tor_ready) {
+        if (tab->web_process_terminated) {
+            nion_reload_crashed_tab(tab);
+            return;
+        }
         nion_clear_retry(tab);
         tab->load_failed = FALSE;
         tab->error_page = FALSE;
@@ -3269,6 +3353,7 @@ static void nion_tab_free(gpointer data)
     g_clear_pointer(&tab->http_allowed_origin, g_free);
     g_clear_pointer(&tab->restore_uri, g_free);
     g_clear_object(&tab->home_return_item);
+    g_clear_pointer(&tab->web_process_uri, g_free);
     g_free(tab);
 }
 
@@ -3421,6 +3506,11 @@ static void on_tab_context_reload_clicked(GtkButton *button, gpointer user_data)
     if (!tab || !tab->app || !tab->app->tor_ready)
         return;
     nion_tab_context_popdown(tab);
+
+    if (tab->web_process_terminated) {
+        nion_reload_crashed_tab(tab);
+        return;
+    }
 
     if (tab->home_page) {
         nion_load_home(tab);
@@ -4057,6 +4147,8 @@ static void nion_update_site_info(NionApp *app)
             gtk_label_set_text(GTK_LABEL(app->site_info_notifications_label), "—");
         if (app->site_info_permissions_reset_button)
             gtk_widget_set_sensitive(app->site_info_permissions_reset_button, FALSE);
+        if (app->site_info_forget_button)
+            gtk_widget_set_sensitive(app->site_info_forget_button, FALSE);
         gtk_widget_set_tooltip_text(app->site_info_button, "No website connection information");
         return;
     }
@@ -4219,6 +4311,8 @@ static void nion_update_site_info(NionApp *app)
     if (app->site_info_notifications_label)
         gtk_label_set_text(GTK_LABEL(app->site_info_notifications_label),
             origin ? nion_permission_status_text(app, origin, NION_PERMISSION_NOTIFICATIONS) : "Blocked");
+    if (app->site_info_forget_button)
+        gtk_widget_set_sensitive(app->site_info_forget_button, TRUE);
     if (app->site_info_permissions_reset_button) {
         gboolean has_temporary = origin && (
             nion_permission_is_temporarily_allowed(app, origin, NION_PERMISSION_CAMERA) ||
@@ -4451,6 +4545,69 @@ static void on_webview_insecure_content_detected(WebKitWebView *web_view,
         if (tab->app->tor_ready)
             nion_set_status(tab->app, "● TOR CONNECTED — MIXED CONTENT DETECTED");
     }
+}
+
+static void on_webview_web_process_terminated(WebKitWebView *web_view,
+                                               WebKitWebProcessTerminationReason reason,
+                                               gpointer user_data)
+{
+    NionTab *tab = user_data;
+    if (!tab || !tab->app || tab->app->shutting_down)
+        return;
+
+    /* Avoid a recovery-page respawn loop if even the fresh process fails. */
+    if (tab->web_process_terminated) {
+        if (nion_current_tab(tab->app) == tab)
+            nion_set_status(tab->app, "● TOR CONNECTED — WEB PROCESS RECOVERY FAILED");
+        return;
+    }
+
+    const gchar *current_uri = tab->display_uri_override && *tab->display_uri_override
+        ? tab->display_uri_override
+        : webkit_web_view_get_uri(web_view);
+    gchar *validation = NULL;
+    gboolean keep_uri = current_uri && *current_uri &&
+        !g_str_equal(current_uri, "about:blank") &&
+        nion_validate_uri(current_uri, &validation);
+    g_free(validation);
+
+    g_clear_pointer(&tab->web_process_uri, g_free);
+    if (keep_uri)
+        tab->web_process_uri = g_strdup(current_uri);
+
+    nion_clear_retry(tab);
+    if (tab->http_warning_decision) {
+        webkit_policy_decision_ignore(tab->http_warning_decision);
+        g_clear_object(&tab->http_warning_decision);
+    }
+    nion_close_http_warning(tab);
+    g_clear_pointer(&tab->http_warning_uri, g_free);
+
+    tab->web_process_terminated = TRUE;
+    tab->home_page = FALSE;
+    tab->error_page = TRUE;
+    tab->load_failed = TRUE;
+    tab->connection_committed = FALSE;
+    tab->mixed_content_displayed = FALSE;
+    tab->mixed_content_run = FALSE;
+    tab->mixed_content_other = FALSE;
+    g_clear_pointer(&tab->display_uri_override, g_free);
+    if (tab->web_process_uri)
+        tab->display_uri_override = g_strdup(tab->web_process_uri);
+
+    gchar *html = nion_web_process_recovery_html(reason, tab->web_process_uri);
+    webkit_web_view_set_zoom_level(web_view, 1.0);
+    webkit_web_view_load_html(web_view, html, "about:blank");
+    g_free(html);
+
+    if (nion_current_tab(tab->app) == tab) {
+        const gchar *status = reason == WEBKIT_WEB_PROCESS_EXCEEDED_MEMORY_LIMIT
+            ? "● TOR CONNECTED — TAB WEB PROCESS HIT MEMORY LIMIT — RELOAD AVAILABLE"
+            : "● TOR CONNECTED — TAB WEB PROCESS TERMINATED — RELOAD AVAILABLE";
+        nion_set_status(tab->app, status);
+    }
+    nion_schedule_session_save(tab->app);
+    nion_update_controls(tab->app);
 }
 
 static void on_webview_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, gpointer user_data)
@@ -6210,6 +6367,9 @@ static void nion_show_http_warning(NionTab *tab, const gchar *uri)
 
     GtkWidget *url_label = gtk_label_new(uri);
     gtk_label_set_wrap(GTK_LABEL(url_label), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(url_label), PANGO_WRAP_CHAR);
+    gtk_label_set_width_chars(GTK_LABEL(url_label), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(url_label), 60);
     gtk_label_set_selectable(GTK_LABEL(url_label), TRUE);
     gtk_label_set_xalign(GTK_LABEL(url_label), 0.0f);
     gtk_widget_add_css_class(url_label, "nion-muted");
@@ -6277,6 +6437,14 @@ static gboolean on_webview_decide_policy(WebKitWebView *web_view,
         WEBKIT_NAVIGATION_POLICY_DECISION(decision));
     WebKitURIRequest *request = action ? webkit_navigation_action_get_request(action) : NULL;
     const gchar *uri = request ? webkit_uri_request_get_uri(request) : NULL;
+
+    /* Internal recovery action from the local WebProcess crash page. Never
+     * send the nion:// URI to the network or URI validator. */
+    if (uri && g_str_has_prefix(uri, "nion://reload-crashed")) {
+        webkit_policy_decision_ignore(decision);
+        nion_reload_crashed_tab(tab);
+        return TRUE;
+    }
 
     if (!uri || g_str_equal(uri, "about:blank"))
         return FALSE;
@@ -6860,6 +7028,8 @@ static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean s
     g_signal_connect(tab->web_view, "load-changed", G_CALLBACK(on_webview_load_changed), tab);
     g_signal_connect(tab->web_view, "load-failed", G_CALLBACK(on_webview_load_failed), tab);
     g_signal_connect(tab->web_view, "load-failed-with-tls-errors", G_CALLBACK(on_webview_tls_failed), tab);
+    g_signal_connect(tab->web_view, "web-process-terminated",
+                     G_CALLBACK(on_webview_web_process_terminated), tab);
     g_signal_connect(tab->web_view, "insecure-content-detected",
                      G_CALLBACK(on_webview_insecure_content_detected), tab);
     g_signal_connect(tab->web_view, "decide-policy", G_CALLBACK(on_webview_decide_policy), tab);
@@ -6942,6 +7112,10 @@ static void action_reload(GSimpleAction *action, GVariant *parameter, gpointer u
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
     if (tab && app->tor_ready) {
+        if (tab->web_process_terminated) {
+            nion_reload_crashed_tab(tab);
+            return;
+        }
         nion_clear_retry(tab);
         tab->load_failed = FALSE;
         tab->error_page = FALSE;
@@ -6957,6 +7131,10 @@ static void action_hard_reload(GSimpleAction *action, GVariant *parameter, gpoin
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
     if (tab && app->tor_ready) {
+        if (tab->web_process_terminated) {
+            nion_reload_crashed_tab(tab);
+            return;
+        }
         nion_clear_retry(tab);
         tab->load_failed = FALSE;
         tab->error_page = FALSE;
@@ -7203,8 +7381,10 @@ static void action_forward(GSimpleAction *action, GVariant *parameter, gpointer 
     (void)parameter;
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
-    if (tab && app->tor_ready && webkit_web_view_can_go_forward(tab->web_view))
+    if (tab && app->tor_ready && webkit_web_view_can_go_forward(tab->web_view)) {
+        nion_prepare_normal_navigation(tab);
         webkit_web_view_go_forward(tab->web_view);
+    }
 }
 
 static void nion_cycle_tab(NionApp *app, gint direction)
@@ -7596,6 +7776,89 @@ static gboolean nion_website_data_matches_host(WebKitWebsiteData *data, const gc
     return matches;
 }
 
+static gboolean nion_tab_matches_site_key(NionTab *tab, const gchar *site_key)
+{
+    if (!tab || !tab->web_view || !site_key)
+        return FALSE;
+    gchar *candidate = nion_site_zoom_key_for_uri(webkit_web_view_get_uri(tab->web_view));
+    gboolean matches = candidate && g_strcmp0(candidate, site_key) == 0;
+    g_free(candidate);
+    return matches;
+}
+
+static void nion_stop_capture_for_origin(NionApp *app, const gchar *origin)
+{
+    if (!app || !origin || !app->notebook)
+        return;
+    gint n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook));
+    for (gint i = 0; i < n_pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(app->notebook), i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (!tab || !tab->web_view)
+            continue;
+        gchar *candidate_origin = nion_web_origin_key_for_uri(
+            webkit_web_view_get_uri(tab->web_view));
+        gboolean same_origin = candidate_origin &&
+            g_strcmp0(candidate_origin, origin) == 0;
+        g_free(candidate_origin);
+        if (!same_origin)
+            continue;
+        webkit_web_view_set_camera_capture_state(
+            tab->web_view, WEBKIT_MEDIA_CAPTURE_STATE_NONE);
+        webkit_web_view_set_microphone_capture_state(
+            tab->web_view, WEBKIT_MEDIA_CAPTURE_STATE_NONE);
+    }
+}
+
+static void nion_forget_site_local_state(NionApp *app, const gchar *uri)
+{
+    if (!app || !uri || !*uri)
+        return;
+
+    gchar *site_key = nion_site_zoom_key_for_uri(uri);
+    gchar *origin = nion_web_origin_key_for_uri(uri);
+
+    if (site_key) {
+        if (app->site_zoom)
+            g_hash_table_remove(app->site_zoom, site_key);
+        if (app->site_javascript_disabled)
+            g_hash_table_remove(app->site_javascript_disabled, site_key);
+        if (app->content_blocking_disabled)
+            g_hash_table_remove(app->content_blocking_disabled, site_key);
+        if (app->autoplay_allowed_sites)
+            g_hash_table_remove(app->autoplay_allowed_sites, site_key);
+
+        if (!app->is_private) {
+            nion_save_site_zoom(app);
+            nion_save_site_javascript(app);
+            nion_save_content_blocking(app);
+            nion_save_autoplay(app);
+        }
+
+        /* Apply reset defaults immediately to already-open matching tabs. */
+        gint n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook));
+        for (gint i = 0; i < n_pages; i++) {
+            GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(app->notebook), i);
+            NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+            if (!nion_tab_matches_site_key(tab, site_key))
+                continue;
+            webkit_web_view_set_zoom_level(tab->web_view, 1.0);
+            nion_apply_site_javascript(tab, webkit_web_view_get_uri(tab->web_view));
+            nion_apply_content_blocking(tab, webkit_web_view_get_uri(tab->web_view));
+            g_clear_pointer(&tab->http_allowed_origin, g_free);
+        }
+    }
+
+    if (origin) {
+        nion_clear_temporary_permissions_for_origin(app, origin);
+        nion_stop_capture_for_origin(app, origin);
+    }
+
+    g_free(origin);
+    g_free(site_key);
+    nion_update_site_info(app);
+}
+
 static void on_clear_site_data_removed(GObject *source, GAsyncResult *result, gpointer user_data)
 {
     NionClearSiteRequest *request = user_data;
@@ -7617,10 +7880,17 @@ static void on_clear_site_data_removed(GObject *source, GAsyncResult *result, gp
         return;
     }
 
+    if (request->forget_site)
+        nion_forget_site_local_state(app, request->uri);
+
     gchar *status = g_strdup_printf(
         app->tor_ready
-            ? "● TOR CONNECTED — DATA CLEARED FOR %s"
-            : "○ TOR OFFLINE — DATA CLEARED FOR %s",
+            ? (request->forget_site
+                ? "● TOR CONNECTED — FORGOT SITE %s"
+                : "● TOR CONNECTED — DATA CLEARED FOR %s")
+            : (request->forget_site
+                ? "○ TOR OFFLINE — FORGOT LOCAL STATE FOR %s"
+                : "○ TOR OFFLINE — DATA CLEARED FOR %s"),
         request->host);
     nion_set_status(app, status);
     g_free(status);
@@ -7666,13 +7936,25 @@ static void on_clear_site_data_fetched(GObject *source, GAsyncResult *result, gp
     g_list_free_full(all_data, (GDestroyNotify)webkit_website_data_unref);
 
     if (!request->website_data) {
+        if (request->forget_site)
+            nion_forget_site_local_state(app, request->uri);
         gchar *status = g_strdup_printf(
             app->tor_ready
-                ? "● TOR CONNECTED — NO STORED DATA FOR %s"
-                : "○ TOR OFFLINE — NO STORED DATA FOR %s",
+                ? (request->forget_site
+                    ? "● TOR CONNECTED — FORGOT SITE %s (NO WEBKIT DATA WAS STORED)"
+                    : "● TOR CONNECTED — NO STORED DATA FOR %s")
+                : (request->forget_site
+                    ? "○ TOR OFFLINE — FORGOT LOCAL STATE FOR %s"
+                    : "○ TOR OFFLINE — NO STORED DATA FOR %s"),
             request->host);
         nion_set_status(app, status);
         g_free(status);
+        if (request->forget_site && app->tor_ready) {
+            NionTab *current = nion_current_tab(app);
+            if (current && current->web_view == request->web_view &&
+                !current->home_page && !current->error_page)
+                webkit_web_view_reload_bypass_cache(request->web_view);
+        }
         nion_clear_site_request_free(request);
         return;
     }
@@ -7705,6 +7987,8 @@ static void on_clear_site_data_confirm_clicked(GtkButton *button, gpointer user_
     request->host = g_strdup(host);
     request->uri = g_strdup(uri);
     request->web_view = g_object_ref(web_view);
+    request->forget_site = GPOINTER_TO_INT(
+        g_object_get_data(G_OBJECT(button), "nion-forget-site")) != 0;
 
     GtkRoot *root = gtk_widget_get_root(GTK_WIDGET(button));
     if (root && GTK_IS_WINDOW(root))
@@ -7723,11 +8007,8 @@ static void on_clear_site_data_confirm_clicked(GtkButton *button, gpointer user_
                                       request);
 }
 
-static void action_clear_site_data(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+static void nion_show_site_data_dialog(NionApp *app, gboolean forget_site)
 {
-    (void)action;
-    (void)parameter;
-    NionApp *app = user_data;
 
     gchar *uri = NULL;
     WebKitWebView *web_view = NULL;
@@ -7742,7 +8023,8 @@ static void action_clear_site_data(GSimpleAction *action, GVariant *parameter, g
     }
 
     GtkWidget *window = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(window), "Clear data for this site");
+    gtk_window_set_title(GTK_WINDOW(window),
+                         forget_site ? "Forget this site" : "Clear data for this site");
     gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(app->window));
     gtk_window_set_modal(GTK_WINDOW(window), TRUE);
     gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
@@ -7757,22 +8039,24 @@ static void action_clear_site_data(GSimpleAction *action, GVariant *parameter, g
 
     GtkWidget *heading = gtk_label_new(NULL);
     gchar *heading_markup = g_markup_printf_escaped(
-        "<b>Clear data for %s?</b>", host);
+        forget_site ? "<b>Forget %s?</b>" : "<b>Clear data for %s?</b>", host);
     gtk_label_set_markup(GTK_LABEL(heading), heading_markup);
     g_free(heading_markup);
     gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
     gtk_box_append(GTK_BOX(box), heading);
 
-    GtkWidget *message = gtk_label_new(
-        "NiOn will remove WebKit data attributed to this site, including cookies, cache, "
-        "local/session storage, IndexedDB and other stored website data. Other websites "
-        "are left alone. You may be signed out of this site.");
+    GtkWidget *message = gtk_label_new(forget_site
+        ? "NiOn will remove this site's WebKit data and reset NiOn's saved state for it: zoom, JavaScript rule, content-blocking exception, autoplay exception, temporary permissions, and temporary HTTP allowance. Bookmarks and downloaded files are not removed."
+        : "NiOn will remove WebKit data attributed to this site, including cookies, cache, local/session storage, IndexedDB and other stored website data. Other websites are left alone. You may be signed out of this site.");
     gtk_label_set_wrap(GTK_LABEL(message), TRUE);
     gtk_label_set_xalign(GTK_LABEL(message), 0.0f);
     gtk_box_append(GTK_BOX(box), message);
 
     GtkWidget *url_label = gtk_label_new(uri);
     gtk_label_set_wrap(GTK_LABEL(url_label), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(url_label), PANGO_WRAP_CHAR);
+    gtk_label_set_width_chars(GTK_LABEL(url_label), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(url_label), 60);
     gtk_label_set_selectable(GTK_LABEL(url_label), TRUE);
     gtk_label_set_xalign(GTK_LABEL(url_label), 0.0f);
     gtk_widget_add_css_class(url_label, "nion-muted");
@@ -7781,7 +8065,8 @@ static void action_clear_site_data(GSimpleAction *action, GVariant *parameter, g
     GtkWidget *buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_set_halign(buttons, GTK_ALIGN_END);
     GtkWidget *cancel = gtk_button_new_with_label("Cancel");
-    GtkWidget *clear = gtk_button_new_with_label("Clear Site Data");
+    GtkWidget *clear = gtk_button_new_with_label(
+        forget_site ? "Forget This Site" : "Clear Site Data");
     gtk_widget_add_css_class(clear, "destructive-action");
     gtk_box_append(GTK_BOX(buttons), cancel);
     gtk_box_append(GTK_BOX(buttons), clear);
@@ -7790,6 +8075,7 @@ static void action_clear_site_data(GSimpleAction *action, GVariant *parameter, g
     g_object_set_data_full(G_OBJECT(clear), "nion-site-host", g_strdup(host), g_free);
     g_object_set_data_full(G_OBJECT(clear), "nion-site-uri", g_strdup(uri), g_free);
     g_object_set_data_full(G_OBJECT(clear), "nion-site-webview", g_object_ref(web_view), g_object_unref);
+    g_object_set_data(G_OBJECT(clear), "nion-forget-site", GINT_TO_POINTER(forget_site));
 
     g_signal_connect(cancel, "clicked", G_CALLBACK(on_preferences_cancel_clicked), app);
     g_signal_connect(clear, "clicked", G_CALLBACK(on_clear_site_data_confirm_clicked), app);
@@ -7798,6 +8084,20 @@ static void action_clear_site_data(GSimpleAction *action, GVariant *parameter, g
     g_free(host);
     g_free(uri);
     g_object_unref(web_view);
+}
+
+static void action_clear_site_data(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    nion_show_site_data_dialog(user_data, FALSE);
+}
+
+static void action_forget_site(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    nion_show_site_data_dialog(user_data, TRUE);
 }
 
 static void nion_clear_data_request_free(NionClearDataRequest *request)
@@ -8293,6 +8593,7 @@ static void nion_install_actions(NionApp *app)
         { "preferences", action_preferences, NULL, NULL, NULL, {0} },
         { "privacy-audit", action_privacy_audit, NULL, NULL, NULL, {0} },
         { "clear-site-data", action_clear_site_data, NULL, NULL, NULL, {0} },
+        { "forget-site", action_forget_site, NULL, NULL, NULL, {0} },
         { "clear-data", action_clear_data, NULL, NULL, NULL, {0} },
         { "about", action_about, NULL, NULL, NULL, {0} },
         { "exit", action_exit, NULL, NULL, NULL, {0} },
@@ -9491,6 +9792,12 @@ static void nion_build_downloads_window(NionApp *app)
     nion_load_download_history(app);
 }
 
+static void on_site_forget_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    nion_show_site_data_dialog(user_data, TRUE);
+}
+
 static void nion_build_ui(NionApp *app)
 {
     app->window = gtk_application_window_new(app->application);
@@ -9653,6 +9960,14 @@ static void nion_build_ui(NionApp *app)
                      G_CALLBACK(on_site_permissions_reset_clicked), app);
     gtk_box_append(GTK_BOX(site_info_box), app->site_info_permissions_reset_button);
 
+    app->site_info_forget_button = gtk_button_new_with_label("Forget This Site…");
+    gtk_widget_set_halign(app->site_info_forget_button, GTK_ALIGN_START);
+    gtk_widget_add_css_class(app->site_info_forget_button, "destructive-action");
+    gtk_widget_set_sensitive(app->site_info_forget_button, FALSE);
+    g_signal_connect(app->site_info_forget_button, "clicked",
+                     G_CALLBACK(on_site_forget_clicked), app);
+    gtk_box_append(GTK_BOX(site_info_box), app->site_info_forget_button);
+
     gtk_box_append(GTK_BOX(site_info_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Address", &app->site_info_uri_label));
     gtk_label_set_selectable(GTK_LABEL(app->site_info_uri_label), TRUE);
@@ -9694,6 +10009,7 @@ static void nion_build_ui(NionApp *app)
     g_menu_append(menu, "Preferences", "win.preferences");
     g_menu_append(menu, "Privacy & Leak Audit", "win.privacy-audit");
     g_menu_append(menu, "Clear Data for This Site…", "win.clear-site-data");
+    g_menu_append(menu, "Forget This Site…", "win.forget-site");
     g_menu_append(menu, "Browsing Data…", "win.clear-data");
     g_menu_append(menu, "About NiOn", "win.about");
     g_menu_append(menu, app->is_private ? "Close Private Window" : "Exit", "win.exit");

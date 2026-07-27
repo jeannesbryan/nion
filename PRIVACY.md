@@ -130,7 +130,7 @@ Bookmark search is performed locally/in memory against stored titles and URLs. N
 
 ## Lightweight content blocking
 
-NiOn 1.5.0 uses WebKit's native declarative content-filter engine with a small ruleset bundled inside the application resources. The rules currently target common third-party advertising/tracking endpoints and intentionally avoid top-level-document blocking.
+NiOn uses WebKit's native declarative content-filter engine with a small ruleset bundled inside the application resources. The rules currently target common third-party advertising/tracking endpoints and intentionally avoid top-level-document blocking.
 
 There is no runtime remote-list download or background filter updater. Updating the bundled ruleset is part of updating NiOn itself. Normal per-site disable exceptions are stored in bounded, atomic `~/.config/nion/content-blocking.ini`; this file can reveal hostnames where the user disabled filtering. Private Window therefore keeps its exceptions only in memory and never reads the normal exception file.
 
@@ -140,7 +140,7 @@ Content blocking is defense-in-depth only. It does not guarantee that all tracke
 
 ## Intelligent Tracking Prevention and autoplay
 
-NiOn 1.5.0 enables WebKit Intelligent Tracking Prevention (ITP) by default. ITP is an engine-level tracking defense and is separate from NiOn's bundled content-filter rules. The legacy strict third-party-cookie option is kept as an alternative: when it is enabled NiOn disables ITP and uses blanket `ACCEPT_NO_THIRD_PARTY`, because WebKit documents that ITP otherwise supersedes that cookie policy.
+NiOn enables WebKit Intelligent Tracking Prevention (ITP) by default. ITP is an engine-level tracking defense and is separate from NiOn's bundled content-filter rules. The legacy strict third-party-cookie option is kept as an alternative: when it is enabled NiOn disables ITP and uses blanket `ACCEPT_NO_THIRD_PARTY`, because WebKit documents that ITP otherwise supersedes that cookie policy.
 
 Audible autoplay is blocked by default using WebKit website policies while muted autoplay is allowed for compatibility. Normal per-site **Allow autoplay with sound** exceptions are stored in bounded atomic `~/.config/nion/autoplay.ini`, which can reveal hostnames where the user created an exception. Private Window keeps autoplay exceptions only in memory and never reads the normal file.
 
@@ -218,3 +218,11 @@ The normal profile can selectively clear WebKit website data/cache, saved per-si
 ## 1.4.0 final audit note
 
 The 1.4.0 finalization rechecks the interaction between temporary site permissions, per-site JavaScript rules, crash recovery, selective data clearing, normal/private persistence boundaries, and Tor fail-closed behavior. The audit is a regression safeguard for this implementation; it does not upgrade NiOn's threat-model claim to Tor Browser equivalence.
+
+## Web process recovery
+
+A WebKit web-process crash is isolated from the NiOn GTK application where WebKit permits it. NiOn listens for `WebKitWebView::web-process-terminated`, replaces only the affected tab with a local recovery page, and preserves the original URL for a deliberate reload. The recovery page itself does not bypass Tor: reloading a web URL returns through NiOn's existing policy validation and Tor-ready gate.
+
+## Forget This Site
+
+**Forget This Site…** is intentionally broader than **Clear Data for This Site…**. In addition to targeted WebKit website data, it removes NiOn's per-site zoom, JavaScript override, content-blocking exception, autoplay exception, temporary permission grants, and temporary HTTP allowance for matching tabs. It does **not** remove bookmarks, download history, or files already exported to disk, because those are explicit user-owned artifacts rather than website state.

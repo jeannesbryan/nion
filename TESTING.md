@@ -278,21 +278,21 @@ Build first:
 Then:
 
 ```bash
-./scripts/test-appimage.sh dist/NiOn-1.5.0-x86_64.AppImage
+./scripts/test-appimage.sh dist/NiOn-1.6.0-x86_64.AppImage
 cd dist
-sha256sum -c NiOn-1.5.0-x86_64.AppImage.sha256
+sha256sum -c NiOn-1.6.0-x86_64.AppImage.sha256
 ```
 
 Run the artifact:
 
 ```bash
-./NiOn-1.5.0-x86_64.AppImage
+./NiOn-1.6.0-x86_64.AppImage
 ```
 
 or without FUSE:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.5.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.6.0-x86_64.AppImage
 ```
 
 Repeat the critical smoke tests against the AppImage itself: Tor bootstrap, clearnet, `.onion`, target-blank/new-tab, context menu, persistent normal session, Private Window ephemerality, and normal/private downloads.
@@ -341,7 +341,7 @@ The filter must not create a new network client or remote update path. All web r
 
 ## Release gate
 
-Do not ship the 1.5.0 release if any of these remain reproducibly broken:
+Do not ship the 1.6.0 release if any of these remain reproducibly broken:
 
 - direct-network fallback or fail-closed regression;
 - Tor bootstrap/runtime packaging;
@@ -385,9 +385,9 @@ Do not ship the 1.5.0 release if any of these remain reproducibly broken:
 6. Repeat in Private Window and confirm no normal profile files are created or modified by private-only JS/permission clearing.
 
 
-## Final 1.5.0 release audit
+## Final 1.6.0 release audit
 
-Before publishing 1.5.0 Stable:
+Before publishing 1.6.0 Stable:
 
 1. Open Site Information on a 1366×768-class display or smaller. Confirm the window stays on-screen, is resizable, and the lower Address/permission controls are reachable with vertical scrolling.
 2. Confirm Content blocking defaults ON, per-site normal exceptions persist, and Private exceptions disappear with the Private Window.
@@ -395,3 +395,32 @@ Before publishing 1.5.0 Stable:
 4. Confirm audible autoplay is blocked by default, muted autoplay works, and per-site sound exceptions obey normal/private persistence rules.
 5. Re-test Tor fail-closed, `target=_blank`, right-click context menus, crash recovery, Browsing Data, normal/private downloads, and Home → Back navigation.
 6. Build the AppImage, run `./scripts/release-preflight.sh`, verify the SHA-256 file, and smoke-test the packaged AppImage.
+
+## Reliability & Site Privacy — 1.6.0
+
+### Web process crash recovery
+
+1. Open several normal tabs and at least one Private tab.
+2. Force-terminate a WebKit web process for one test tab (for example by identifying the WebKitWebProcess child PID and terminating only that child, not the NiOn/Tor process).
+3. Confirm the NiOn application window stays alive.
+4. Confirm the affected tab shows the local **This tab stopped unexpectedly** recovery page.
+5. Confirm the original HTTP(S)/.onion address remains visible in the address bar.
+6. Use **Reload Tab** or the normal Reload control and confirm the page is recreated through the normal Tor-gated navigation path.
+7. Repeat with a second tab and verify unrelated tabs remain usable.
+8. Restart NiOn while a recovery page is visible and confirm session restore uses the original URL rather than persisting the synthetic recovery page state.
+
+### Forget This Site
+
+Prepare one site with stored login/site data plus non-default zoom, JavaScript disabled, content blocking disabled, autoplay allowed, and (where practical) a temporary permission grant. Then:
+
+1. Choose **Forget This Site…** from the menu or Site Information.
+2. Confirm the destructive dialog clearly says bookmarks/downloaded files are not removed.
+3. Confirm site cookies/storage/cache are removed and the active site reloads signed out/reset.
+4. Confirm zoom returns to 100%.
+5. Confirm JavaScript returns to enabled.
+6. Confirm content blocking returns to enabled.
+7. Confirm audible autoplay returns to blocked-by-default.
+8. Confirm temporary permissions are revoked and active camera/microphone capture stops.
+9. Confirm any temporary plain-HTTP allowance for matching open tabs is reset.
+10. Confirm bookmarks for the site remain present and downloaded files/history are untouched.
+11. Repeat in a Private Window and confirm only that Private Window's ephemeral state is affected.

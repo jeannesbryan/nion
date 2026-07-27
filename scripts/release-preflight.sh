@@ -104,7 +104,10 @@ for test in \
   scripts/test-content-blocking-stage1.sh \
   scripts/test-tracking-media-stage2.sh \
   scripts/test-hardening-stage3-1.5.0.sh \
-  scripts/test-site-info-width-fix.sh; do
+  scripts/test-site-info-width-fix.sh \
+  scripts/test-web-process-recovery-1.6.0.sh \
+  scripts/test-forget-site-1.6.0.sh \
+  scripts/test-hardening-1.6.0.sh; do
   if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
 done
 

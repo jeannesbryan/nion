@@ -6,7 +6,7 @@ SRC=src/main.c
 fail(){ echo "TRACKING/MEDIA STAGE 2: FAIL: $*" >&2; exit 1; }
 pass(){ echo "PASS: $*"; }
 
-[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "1.5.0" ]] || fail "manifest version is not 1.5.0"
+[[ -s release/manifest/NION_VERSION ]] || fail "canonical NiOn version manifest missing"
 status="$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)"
 [[ "$status" == 'Tracking & Content Protection development — Stage 2' || "$status" == 'Stable' ]] || fail "Stage 2/final release status missing"
 

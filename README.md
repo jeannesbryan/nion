@@ -2,9 +2,9 @@
 
 NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens both clearnet and Tor v3 `.onion` sites through its own bundled Tor runtime and is designed to fail closed rather than silently fall back to a direct connection.
 
-**Stable release: 1.5.0**  
+**Stable release: 1.6.0**  
 **Platform: GNU/Linux x86_64 AppImage**
-**Project focus after 1.5.0: maintenance and bug fixes.**
+**Project focus after 1.6.0: maintenance and bug fixes.**
 
 > NiOn is not Tor Browser. It does not claim Tor Browser-grade anonymity, anti-fingerprinting, or browser-hardening guarantees.
 
@@ -29,6 +29,7 @@ NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens b
 - Pinned tabs are protected from bulk-close actions, while explicit Close Tab / `Ctrl+W` still works.
 - Links using `target="_blank"`, `window.open()`, and context-menu new-tab actions open inside NiOn.
 - The internal Home/New Tab page preserves the page you came from, so Back returns to the previous website instead of losing navigation context.
+- Web process crash recovery keeps the NiOn window alive when a tab's WebKit process terminates; the affected tab shows a local recovery page with **Reload Tab** instead of taking down the whole browser.
 
 ### Private Window
 
@@ -100,7 +101,7 @@ Site controls are also available here:
 
 ### Lightweight content blocking
 
-NiOn 1.5.0 Stage 1 adds a small bundled third-party ad/tracker ruleset compiled by WebKit's native content-filter engine. It is intentionally lightweight: there is no extension engine, background list updater, remote filter download, or attempt to reproduce uBlock Origin.
+NiOn uses a small bundled third-party ad/tracker ruleset compiled by WebKit's native content-filter engine. It is intentionally lightweight: there is no extension engine, background list updater, remote filter download, or attempt to reproduce uBlock Origin.
 
 - Blocking is enabled by default for normal web pages.
 - The rules target a bounded set of common third-party advertising/tracking domains and do not block top-level documents.
@@ -113,7 +114,7 @@ Content blocking reduces some unwanted third-party requests; it is not an anonym
 
 ### Tracking and media protection
 
-NiOn 1.5.0 Stage 2 enables **WebKit Intelligent Tracking Prevention (ITP)** by default on normal and Private network sessions. The older Preferences option for blanket third-party-cookie blocking is retained as a stricter alternative; enabling it disables ITP because upstream WebKit supersedes `ACCEPT_NO_THIRD_PARTY` while ITP is active.
+NiOn enables **WebKit Intelligent Tracking Prevention (ITP)** by default on normal and Private network sessions. The older Preferences option for blanket third-party-cookie blocking is retained as a stricter alternative; enabling it disables ITP because upstream WebKit supersedes `ACCEPT_NO_THIRD_PARTY` while ITP is active.
 
 Autoplay protection uses WebKit website policies:
 
@@ -143,6 +144,7 @@ If NiOn detects that the previous normal session did not shut down cleanly, it d
 Data controls:
 
 - **Clear Data for This Site…** removes matching WebKit website data for the active site.
+- **Forget This Site…** is the stronger per-site reset: it removes matching WebKit data plus saved zoom, JavaScript override, content-blocking exception, autoplay exception, temporary permissions, and the tab's temporary HTTP allowance. Bookmarks, download history, and downloaded files are intentionally kept.
 - **Browsing Data…** opens a selective manager for cookies/site storage, Web cache, saved zoom levels, per-site JavaScript rules, content-blocking exceptions, autoplay exceptions, and temporary site permissions.
 - Website data + cache are selected by default to preserve the old global-clear behavior; zoom and site-control rules require explicit selection.
 - Private website data is ephemeral and is not mixed into the normal persistent profile; the same manager can clear the current Private Window's in-memory state early.
@@ -229,14 +231,14 @@ Private Window data does not use these normal persistence paths for private webs
 ## Run the AppImage
 
 ```bash
-chmod +x NiOn-1.5.0-x86_64.AppImage
-./NiOn-1.5.0-x86_64.AppImage
+chmod +x NiOn-1.6.0-x86_64.AppImage
+./NiOn-1.6.0-x86_64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.5.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.6.0-x86_64.AppImage
 ```
 
 ## Build from source
@@ -259,8 +261,8 @@ Build the production AppImage with:
 Expected output:
 
 ```text
-dist/NiOn-1.5.0-x86_64.AppImage
-dist/NiOn-1.5.0-x86_64.AppImage.sha256
+dist/NiOn-1.6.0-x86_64.AppImage
+dist/NiOn-1.6.0-x86_64.AppImage.sha256
 ```
 
 See [BUILDING.md](BUILDING.md) for the complete build/release procedure and [TESTING.md](TESTING.md) for runtime validation.

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.0 — 2026-07-27
+
+### Reliability & Site Privacy
+
+- Added per-tab WebKit web-process crash recovery using `WebKitWebView::web-process-terminated`. A terminated/crashed WebProcess no longer has to take the NiOn UI down with it: the affected tab shows a local recovery page, preserves the original URL, distinguishes memory-limit termination, and can recreate the page through the normal Tor-gated navigation path. Synthetic crash-page WebKit session state is never persisted; normal session recovery keeps the original URL instead.
+- Added **Forget This Site…** as a deliberate superset of the existing **Clear Data for This Site…** operation. It removes targeted WebKit website data plus saved site zoom, JavaScript override, content-blocking exception, autoplay exception, temporary permission grants/capture, and matching temporary HTTP allowance. Bookmarks, download history, and downloaded files are intentionally preserved.
+- Added **Forget This Site…** to both the main menu and Site Information.
+- Kept the 1.5.0 Site Information transient-window width/scroll fixes and bounded long-URL wrapping.
+- Added 1.6.0 regression guards for WebProcess recovery and per-site forgetting, re-ran historical feature regressions, and promoted 1.6.0 metadata to Stable.
+
 ## 1.5.0 — 2026-07-26
 
 ### Lightweight Content Blocking
