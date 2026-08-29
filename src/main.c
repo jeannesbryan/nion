@@ -10019,12 +10019,16 @@ static gboolean nion_free_private_app_idle(gpointer user_data)
         g_ptr_array_remove_fast(owner->private_windows, app);
 
     g_clear_object(&app->network_session);
+    
+    // Baris g_clear_object(&app->web_context); sudah dihapus di sini
+
     g_clear_pointer(&app->tor_proxy_uri, g_free);
     g_clear_pointer(&app->tor_last_log, g_free);
     g_clear_pointer(&app->search_engine, g_free);
     g_clear_pointer(&app->download_dir, g_free);
     g_clear_pointer(&app->preferences_file, g_free);
     g_clear_pointer(&app->bookmarks_file, g_free);
+    
     if (app->bookmarks)
         g_ptr_array_unref(app->bookmarks);
     if (app->site_javascript_disabled)
@@ -10039,6 +10043,13 @@ static gboolean nion_free_private_app_idle(gpointer user_data)
         g_hash_table_unref(app->temporary_permissions);
     if (app->closed_tabs)
         g_queue_free_full(app->closed_tabs, nion_closed_tab_free);
+        
+    // Hentikan dan bersihkan proses Tor langsung di sini
+    if (app->tor_process) {
+        g_subprocess_send_signal(app->tor_process, SIGTERM);
+        g_clear_object(&app->tor_process);
+    }
+
     g_free(app);
     return G_SOURCE_REMOVE;
 }
@@ -10737,6 +10748,13 @@ static void nion_cleanup(NionApp *app)
 
 static void nion_prepare_appimage_webkit_sandbox(void)
 {
+    /* --- LANGKAH 3: PENGHEMAT RAM MULAI DI SINI --- */
+    WebKitWebContext *context = webkit_web_context_get_default();
+    
+    // Set model cache agar super irit RAM
+    webkit_web_context_set_cache_model(context, WEBKIT_CACHE_MODEL_DOCUMENT_VIEWER);
+    /* --- LANGKAH 3 SELESAI --- */
+
     const gchar *appdir = g_getenv("APPDIR");
     if (!appdir || !g_path_is_absolute(appdir) ||
         !g_file_test(appdir, G_FILE_TEST_IS_DIR))
@@ -10745,7 +10763,6 @@ static void nion_prepare_appimage_webkit_sandbox(void)
     /* WebKitGTK 6 keeps its WebProcess sandbox mandatory. The AppImage mount
      * is outside the normal system prefixes, so explicitly make the read-only
      * AppDir visible before any WebKit subprocess can be created. */
-    WebKitWebContext *context = webkit_web_context_get_default();
     webkit_web_context_add_path_to_sandbox(context, appdir, TRUE);
 }
 
