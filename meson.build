@@ -63,6 +63,7 @@ executable(
   'src/content-filter.c',
   'src/permission.c',
   'src/privacy.c',
+  'src/session.c',
   nion_resources,
   include_directories: include_directories('.'),
   dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
