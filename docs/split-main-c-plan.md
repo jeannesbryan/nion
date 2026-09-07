@@ -155,8 +155,10 @@
 - [x] 2026-09-07: **沉淀 `c-split-verify` skill**(本地 Docker 卡死转战远程 Linux 机器 + `.dockerignore` 坑 + 用 `Linking target` 判断编译通过)
 - [x] 2026-09-07: **建 worktree 隔离并行拆分**(方案 B): `nion-wt-preferences`(分支 `refactor/extract-preferences`)。子代理**只产出 .c/.h + 改 main.c,不碰 meson.build**(方案 A 的 meson.build 统一更新原则,合并时由主 agent 补)。
 - [x] 2026-09-07: **评估 download 依赖闭包 → 结论: 不派子代理**。`nion_save_download_history`/`nion_load_download_history` 虽名义为"数据函数",但**深度操作 UI 控件**(`item->progress_bar`/`gtk_*`),与 UI 回调耦合深,属高耦合模块,留后期(归 UI 域)。一期真正干净的纯逻辑模块: session(已拆)、preferences(拆中)。
-- [ ] 待办: 合并 preferences 子代理产出 + 更新 meson.build 源列表 + 编译验证
-- [ ] 待办: 一期剩余模块(如需) — 无其他干净纯逻辑模块,转二期/三期(UI 域,主 agent 把关)
+- [x] 2026-09-07: **preferences 拆分合并完成 + 编译验证通过**(`2fd7af6` 合并, `c212c21` static 修复)。e3 编译: `[13/13] Linking target nion` + `DONE 5.5s`, 0 错误。main.c 9003→8873 行。
+- [x] 2026-09-07: **子代理分头拆机制跑通**(worktree 隔离 + 并行拆 + 合并 + e3 编译验证)。派子代理经验: 必须明确 static 边界(哪些导出/哪些内部)。
+- [x] 2026-09-07: **UI 域拆分决策: 暂不拆,留给 Jeanne 练手**。UI 模块(91 函数/1220 gtk_ 调用)是 main.c 主体,拆解耦合深(经 NionApp 状态互链),但**机制已跑通**,Jeanne 可自行用同样方式拆。一期聚焦 session+preferences(纯逻辑) 示范"高效拆分机制"。
+- [ ] 待办: (可选) 后续按需拆 UI 域(整域拆分,download/bookmark/tab),或留 Jeanne 自行推进
 
 ---
 *本文档由 IDES agent (rush·暗河) 协助生成,遵循 NiOn 既有拆分纪律。*
