@@ -15,6 +15,8 @@
 
 #include "config.h"
 #include "types.h"
+#include "util.h"
+#include "navigation.h"
 
 static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select);
 static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean select,
@@ -90,11 +92,8 @@ static void nion_apply_content_blocking(NionTab *tab, const gchar *uri);
 static void nion_prepare_content_filter(NionApp *app);
 static void nion_apply_site_javascript(NionTab *tab, const gchar *uri);
 static const gchar *nion_search_template(const NionApp *app);
-static gboolean nion_validate_uri(const gchar *uri, gchar **message);
-static gboolean nion_uri_is_http_clearnet(const gchar *uri);
 static gchar *nion_http_origin_key(const gchar *uri);
 static void nion_show_http_warning(NionTab *tab, const gchar *uri);
-static gchar *nion_external_protocol_scheme(const gchar *uri);
 static void nion_show_external_protocol_prompt(NionTab *tab, const gchar *uri, const gchar *scheme);
 
 static NionTab *nion_current_tab(NionApp *app)
@@ -139,110 +138,6 @@ static void nion_set_status(NionApp *app, const gchar *text)
         gtk_widget_add_css_class(app->status_label, "nion-status-warning");
     else
         gtk_widget_add_css_class(app->status_label, "nion-status-connecting");
-}
-
-static gboolean nion_profile_file_within_limit(const gchar *path, goffset max_bytes)
-{
-    if (!path || max_bytes <= 0 || !g_file_test(path, G_FILE_TEST_EXISTS))
-        return TRUE;
-
-    GStatBuf st = {0};
-    if (g_stat(path, &st) != 0)
-        return FALSE;
-
-    return S_ISREG(st.st_mode) && st.st_size >= 0 && st.st_size <= max_bytes;
-}
-
-static void nion_quarantine_profile_file(const gchar *path, const gchar *label)
-{
-    if (!path || !g_file_test(path, G_FILE_TEST_EXISTS))
-        return;
-
-    GDateTime *now = g_date_time_new_now_local();
-    gchar *stamp = now ? g_date_time_format(now, "%Y%m%d-%H%M%S") : g_strdup("unknown-time");
-    gint64 nonce = g_get_real_time();
-    gchar *target = g_strdup_printf("%s.corrupt-%s-%" G_GINT64_FORMAT, path, stamp, nonce);
-
-    if (g_rename(path, target) == 0) {
-        g_chmod(target, 0600);
-        g_warning("Quarantined invalid NiOn %s file as %s",
-                  label ? label : "profile", target);
-    } else {
-        g_warning("Could not quarantine invalid NiOn %s file %s",
-                  label ? label : "profile", path);
-    }
-
-    g_free(target);
-    g_free(stamp);
-    if (now)
-        g_date_time_unref(now);
-}
-
-static gboolean nion_base64_state_looks_valid(const gchar *base64)
-{
-    if (!base64 || !*base64)
-        return FALSE;
-
-    gsize len = strlen(base64);
-    if (len > NION_MAX_TAB_STATE_BASE64_BYTES || (len % 4) != 0)
-        return FALSE;
-
-    gboolean padding_seen = FALSE;
-    guint padding = 0;
-    for (gsize i = 0; i < len; i++) {
-        const guchar c = (guchar)base64[i];
-        if (c == '=') {
-            padding_seen = TRUE;
-            padding++;
-            if (padding > 2 || i + 2 < len)
-                return FALSE;
-            continue;
-        }
-        if (padding_seen)
-            return FALSE;
-        if (!(g_ascii_isalnum(c) || c == '+' || c == '/'))
-            return FALSE;
-    }
-
-    return TRUE;
-}
-
-static gboolean nion_write_key_file_atomic(GKeyFile *key_file, const gchar *path)
-{
-    if (!key_file || !path)
-        return FALSE;
-
-    gsize length = 0;
-    GError *error = NULL;
-    gchar *contents = g_key_file_to_data(key_file, &length, &error);
-    if (!contents) {
-        g_warning("Could not serialize NiOn state: %s", error ? error->message : "unknown error");
-        g_clear_error(&error);
-        return FALSE;
-    }
-
-    gchar *tmp = g_strdup_printf("%s.tmp", path);
-    gboolean ok = g_file_set_contents(tmp, contents, (gssize)length, &error);
-    g_free(contents);
-
-    if (!ok) {
-        g_warning("Could not write %s: %s", tmp, error ? error->message : "unknown error");
-        g_clear_error(&error);
-        g_unlink(tmp);
-        g_free(tmp);
-        return FALSE;
-    }
-
-    g_chmod(tmp, 0600);
-    if (g_rename(tmp, path) != 0) {
-        g_warning("Could not replace %s", path);
-        g_unlink(tmp);
-        g_free(tmp);
-        return FALSE;
-    }
-
-    g_free(tmp);
-    return TRUE;
 }
 
 static const gchar *nion_security_level_id(NionSecurityLevel level)
@@ -593,7 +488,6 @@ static void nion_apply_site_zoom(NionTab *tab, const gchar *uri)
     webkit_web_view_set_zoom_level(tab->web_view, (gdouble)percent / 100.0);
 }
 
-
 static gboolean nion_site_javascript_enabled_for_uri(NionApp *app, const gchar *uri)
 {
     if (!app || !uri || !*uri)
@@ -862,7 +756,6 @@ static gchar *nion_permission_cache_key(const gchar *origin, guint permission)
         ? g_strdup_printf("%s|%s", origin, nion_permission_name(permission))
         : NULL;
 }
-
 
 static gboolean nion_content_blocking_enabled_for_uri(NionApp *app, const gchar *uri)
 {
@@ -1740,239 +1633,6 @@ static void nion_show_crash_recovery_prompt(NionApp *app)
     gtk_window_present(GTK_WINDOW(window));
 }
 
-static gboolean nion_looks_like_host_port(const gchar *text)
-{
-    if (!text || !*text || strpbrk(text, " \t\r\n"))
-        return FALSE;
-
-    const gchar *colon = strchr(text, ':');
-    if (!colon || colon == text)
-        return FALSE;
-
-    /* Keep common host:port input such as localhost:8080 and
-     * example.com:8443 from being mistaken for a URI scheme. */
-    gchar *host = g_strndup(text, (gsize)(colon - text));
-    gboolean hostish = g_ascii_strcasecmp(host, "localhost") == 0 || strchr(host, '.') != NULL;
-    g_free(host);
-    if (!hostish)
-        return FALSE;
-
-    const gchar *p = colon + 1;
-    if (!g_ascii_isdigit(*p))
-        return FALSE;
-    while (g_ascii_isdigit(*p))
-        p++;
-
-    return *p == '\0' || *p == '/' || *p == '?' || *p == '#';
-}
-
-static gboolean nion_string_has_scheme(const gchar *text)
-{
-    if (!text || !g_ascii_isalpha(text[0]) || nion_looks_like_host_port(text))
-        return FALSE;
-
-    for (const gchar *p = text + 1; *p; p++) {
-        if (*p == ':')
-            return TRUE;
-        if (!(g_ascii_isalnum(*p) || *p == '+' || *p == '-' || *p == '.'))
-            return FALSE;
-    }
-
-    return FALSE;
-}
-
-
-static gboolean nion_ipv4_bytes_are_private(const guint8 *bytes)
-{
-    if (!bytes)
-        return FALSE;
-
-    /* Unspecified/current-network, RFC1918, loopback, carrier-grade NAT,
-     * link-local, benchmarking, multicast and reserved space. NiOn is a
-     * Tor-only web browser, not a local-network browser. */
-    if (bytes[0] == 0 ||
-        bytes[0] == 10 ||
-        bytes[0] == 127 ||
-        (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-        (bytes[0] == 169 && bytes[1] == 254) ||
-        (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-        (bytes[0] == 192 && bytes[1] == 168) ||
-        (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
-        bytes[0] >= 224)
-        return TRUE;
-
-    return FALSE;
-}
-
-static gboolean nion_ipv6_bytes_are_private(const guint8 *bytes)
-{
-    if (!bytes)
-        return FALSE;
-
-    gboolean all_zero = TRUE;
-    for (guint i = 0; i < 16; i++) {
-        if (bytes[i] != 0) {
-            all_zero = FALSE;
-            break;
-        }
-    }
-    if (all_zero)
-        return TRUE;
-
-    /* ::1 */
-    gboolean loopback = TRUE;
-    for (guint i = 0; i < 15; i++) {
-        if (bytes[i] != 0) {
-            loopback = FALSE;
-            break;
-        }
-    }
-    if (loopback && bytes[15] == 1)
-        return TRUE;
-
-    /* fc00::/7 (ULA), fe80::/10 (link-local), ff00::/8 (multicast). */
-    if ((bytes[0] & 0xfe) == 0xfc ||
-        (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
-        bytes[0] == 0xff)
-        return TRUE;
-
-    /* IPv4-mapped IPv6 ::ffff:a.b.c.d */
-    gboolean mapped = TRUE;
-    for (guint i = 0; i < 10; i++) {
-        if (bytes[i] != 0) {
-            mapped = FALSE;
-            break;
-        }
-    }
-    if (mapped && bytes[10] == 0xff && bytes[11] == 0xff)
-        return nion_ipv4_bytes_are_private(bytes + 12);
-
-    return FALSE;
-}
-
-static gboolean nion_host_is_local_or_private(const gchar *host)
-{
-    if (!host || !*host)
-        return FALSE;
-
-    gchar *lower = g_ascii_strdown(host, -1);
-    gboolean local_name =
-        g_str_equal(lower, "localhost") ||
-        g_str_has_suffix(lower, ".localhost") ||
-        g_str_has_suffix(lower, ".local") ||
-        g_str_has_suffix(lower, ".lan") ||
-        g_str_equal(lower, "home.arpa") ||
-        g_str_has_suffix(lower, ".home.arpa");
-
-    if (local_name) {
-        g_free(lower);
-        return TRUE;
-    }
-
-    GInetAddress *address = g_inet_address_new_from_string(lower);
-    g_free(lower);
-    if (!address)
-        return FALSE;
-
-    const guint8 *bytes = g_inet_address_to_bytes(address);
-    gboolean blocked = g_inet_address_get_family(address) == G_SOCKET_FAMILY_IPV4
-        ? nion_ipv4_bytes_are_private(bytes)
-        : nion_ipv6_bytes_are_private(bytes);
-
-    g_object_unref(address);
-    return blocked;
-}
-
-static gboolean nion_host_is_onion(const gchar *host)
-{
-    if (!host)
-        return FALSE;
-
-    gchar *lower = g_ascii_strdown(host, -1);
-    gboolean result = g_str_has_suffix(lower, ".onion");
-    g_free(lower);
-    return result;
-}
-
-static gboolean nion_is_valid_v3_onion_host(const gchar *host)
-{
-    if (!host)
-        return FALSE;
-
-    gchar *lower = g_ascii_strdown(host, -1);
-    if (!g_str_has_suffix(lower, ".onion")) {
-        g_free(lower);
-        return FALSE;
-    }
-
-    gsize host_len = strlen(lower);
-    if (host_len <= 6) {
-        g_free(lower);
-        return FALSE;
-    }
-
-    gchar *suffix = lower + host_len - 6; /* points to .onion */
-    gchar *label_start = suffix;
-    while (label_start > lower && *(label_start - 1) != '.')
-        label_start--;
-
-    gsize label_len = (gsize)(suffix - label_start);
-    if (label_len != 56) {
-        g_free(lower);
-        return FALSE;
-    }
-
-    for (gsize i = 0; i < label_len; i++) {
-        gchar c = label_start[i];
-        if (!((c >= 'a' && c <= 'z') || (c >= '2' && c <= '7'))) {
-            g_free(lower);
-            return FALSE;
-        }
-    }
-
-    g_free(lower);
-    return TRUE;
-}
-
-static gboolean nion_uri_is_onion(const gchar *uri)
-{
-    if (!uri)
-        return FALSE;
-
-    GError *error = NULL;
-    GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_PARSE_RELAXED, &error);
-    if (!parsed) {
-        g_clear_error(&error);
-        return FALSE;
-    }
-
-    gboolean result = nion_host_is_onion(g_uri_get_host(parsed));
-    g_uri_unref(parsed);
-    return result;
-}
-
-static gboolean nion_validate_uri(const gchar *uri, gchar **message);
-
-
-static gboolean nion_uri_is_http_clearnet(const gchar *uri)
-{
-    if (!uri || !*uri || nion_uri_is_onion(uri))
-        return FALSE;
-
-    GError *error = NULL;
-    GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_PARSE_RELAXED, &error);
-    if (!parsed) {
-        g_clear_error(&error);
-        return FALSE;
-    }
-
-    const gchar *scheme = g_uri_get_scheme(parsed);
-    const gchar *host = g_uri_get_host(parsed);
-    gboolean ok = scheme && host && *host && g_ascii_strcasecmp(scheme, "http") == 0;
-    g_uri_unref(parsed);
-    return ok;
-}
-
 static gchar *nion_http_origin_key(const gchar *uri)
 {
     if (!nion_uri_is_http_clearnet(uri))
@@ -1995,24 +1655,6 @@ static gchar *nion_http_origin_key(const gchar *uri)
     g_free(lower_host);
     g_uri_unref(parsed);
     return key;
-}
-
-static gboolean nion_uri_is_https_clearnet(const gchar *uri)
-{
-    if (!uri || !*uri || nion_uri_is_onion(uri))
-        return FALSE;
-
-    GError *error = NULL;
-    GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_PARSE_RELAXED, &error);
-    if (!parsed) {
-        g_clear_error(&error);
-        return FALSE;
-    }
-
-    const gchar *scheme = g_uri_get_scheme(parsed);
-    gboolean ok = scheme && g_ascii_strcasecmp(scheme, "https") == 0;
-    g_uri_unref(parsed);
-    return ok;
 }
 
 static gboolean nion_is_valid_onion_location(NionTab *tab, const gchar *candidate)
@@ -2116,45 +1758,6 @@ static void nion_detect_onion_location(NionTab *tab)
                                         NULL,
                                         on_onion_meta_evaluated,
                                         g_object_ref(tab->page));
-}
-
-static gboolean nion_scheme_is_internal_only(const gchar *scheme)
-{
-    if (!scheme || !*scheme)
-        return FALSE;
-
-    const gchar *blocked[] = {
-        "file", "javascript", "data", "blob", "about", "nion"
-    };
-    for (guint i = 0; i < G_N_ELEMENTS(blocked); i++) {
-        if (g_ascii_strcasecmp(scheme, blocked[i]) == 0)
-            return TRUE;
-    }
-    return FALSE;
-}
-
-static gchar *nion_external_protocol_scheme(const gchar *uri)
-{
-    if (!uri || !*uri || strlen(uri) > NION_MAX_SAVED_URI_BYTES)
-        return NULL;
-
-    GError *error = NULL;
-    GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_PARSE_RELAXED, &error);
-    if (!parsed) {
-        g_clear_error(&error);
-        return NULL;
-    }
-
-    const gchar *scheme = g_uri_get_scheme(parsed);
-    gchar *result = NULL;
-    if (scheme && *scheme &&
-        g_ascii_strcasecmp(scheme, "http") != 0 &&
-        g_ascii_strcasecmp(scheme, "https") != 0 &&
-        !nion_scheme_is_internal_only(scheme))
-        result = g_ascii_strdown(scheme, -1);
-
-    g_uri_unref(parsed);
-    return result;
 }
 
 static gchar *nion_external_protocol_preview(const gchar *uri)
@@ -2290,70 +1893,6 @@ static void nion_show_external_protocol_prompt(NionTab *tab,
     g_free(detail);
     g_free(message);
     g_free(preview);
-}
-
-static gboolean nion_validate_uri(const gchar *uri, gchar **message)
-{
-    if (message)
-        *message = NULL;
-
-    if (!uri || !*uri) {
-        if (message)
-            *message = g_strdup("The address is empty.");
-        return FALSE;
-    }
-
-    if (g_str_equal(uri, "about:blank"))
-        return TRUE;
-
-    GError *error = NULL;
-    GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_PARSE_RELAXED, &error);
-    if (!parsed) {
-        if (message)
-            *message = g_strdup_printf("Invalid address: %s",
-                                       error ? error->message : "could not parse URI");
-        g_clear_error(&error);
-        return FALSE;
-    }
-
-    const gchar *scheme = g_uri_get_scheme(parsed);
-    const gchar *host = g_uri_get_host(parsed);
-
-    if (!scheme || !(g_ascii_strcasecmp(scheme, "http") == 0 ||
-                     g_ascii_strcasecmp(scheme, "https") == 0)) {
-        if (message)
-            *message = g_strdup("NiOn only opens http:// and https:// web addresses.");
-        g_uri_unref(parsed);
-        return FALSE;
-    }
-
-    if (!host || !*host) {
-        if (message)
-            *message = g_strdup("The web address does not contain a valid hostname.");
-        g_uri_unref(parsed);
-        return FALSE;
-    }
-
-    if (nion_host_is_local_or_private(host)) {
-        if (message)
-            *message = g_strdup(
-                "Local, private, link-local, multicast, and reserved network addresses are blocked "
-                "by NiOn's Tor-only privacy policy.");
-        g_uri_unref(parsed);
-        return FALSE;
-    }
-
-    if (nion_host_is_onion(host) && !nion_is_valid_v3_onion_host(host)) {
-        if (message)
-            *message = g_strdup(
-                "Invalid .onion address. NiOn accepts Tor v3 onion addresses "
-                "with a 56-character base32 service label before .onion.");
-        g_uri_unref(parsed);
-        return FALSE;
-    }
-
-    g_uri_unref(parsed);
-    return TRUE;
 }
 
 static const gchar *nion_search_template(const NionApp *app)
@@ -2806,7 +2345,6 @@ static void nion_set_tor_progress(NionApp *app, gint percent)
     nion_update_controls(app);
     nion_sync_private_windows_tor(app);
 }
-
 
 static void nion_stop_all_web_activity(NionApp *app)
 {
@@ -3834,7 +3372,6 @@ static const gchar *nion_permission_status_text(NionApp *app,
         : "Blocked by default";
 }
 
-
 static void on_site_content_blocking_switch_notify(GObject *object,
                                                     GParamSpec *pspec,
                                                     gpointer user_data)
@@ -4250,7 +3787,6 @@ static void nion_update_site_info(NionApp *app)
         gtk_label_set_text(GTK_LABEL(app->site_info_javascript_status_label), js_status);
     }
 
-
     gboolean content_blocking_enabled = nion_content_blocking_enabled_for_uri(app, uri);
     gboolean filter_ready = nion_content_filter_is_ready(app);
     gboolean filter_failed = nion_content_filter_has_failed(app);
@@ -4313,7 +3849,6 @@ static void nion_update_site_info(NionApp *app)
         gtk_widget_set_sensitive(app->site_info_permissions_reset_button, has_temporary);
     }
     g_free(origin);
-
 
     g_free(connection);
     g_free(host_text);
@@ -4749,22 +4284,6 @@ static gboolean on_webview_tls_failed(WebKitWebView *web_view,
                          TRUE);
     nion_set_status(app, "● TOR CONNECTED — TLS ERROR");
     return TRUE;
-}
-
-static gchar *nion_format_bytes(guint64 bytes)
-{
-    const gchar *units[] = { "B", "KiB", "MiB", "GiB", "TiB" };
-    gdouble value = (gdouble)bytes;
-    guint unit = 0;
-
-    while (value >= 1024.0 && unit + 1 < G_N_ELEMENTS(units)) {
-        value /= 1024.0;
-        unit++;
-    }
-
-    if (unit == 0)
-        return g_strdup_printf("%" G_GUINT64_FORMAT " %s", bytes, units[unit]);
-    return g_strdup_printf("%.1f %s", value, units[unit]);
 }
 
 static gchar *nion_safe_download_filename(const gchar *suggested)
@@ -6545,7 +6064,6 @@ static gboolean on_webview_decide_policy(WebKitWebView *web_view,
     return TRUE;
 }
 
-
 static void nion_set_boolean_setting_if_present(WebKitSettings *settings,
                                                 const gchar *property_name,
                                                 gboolean value)
@@ -7758,7 +7276,6 @@ static void action_preferences(GSimpleAction *action, GVariant *parameter, gpoin
     gtk_check_button_set_active(GTK_CHECK_BUTTON(third_party), app->block_third_party_cookies);
     gtk_box_append(GTK_BOX(box), third_party);
 
-
     GtkWidget *search_heading = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(search_heading), "<b>Default search engine</b>");
     gtk_label_set_xalign(GTK_LABEL(search_heading), 0.0f);
@@ -8516,7 +8033,6 @@ static void action_clear_data(GSimpleAction *action, GVariant *parameter, gpoint
     g_signal_connect(clear, "clicked", G_CALLBACK(on_clear_data_confirm_clicked), app);
     gtk_window_present(GTK_WINDOW(window));
 }
-
 
 static GtkWidget *nion_audit_row(const gchar *title, const gchar *status, const gchar *detail)
 {

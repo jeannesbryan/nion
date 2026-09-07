@@ -57,6 +57,8 @@ nion_metainfo = configure_file(
 executable(
   'nion',
   'src/main.c',
+  'src/util.c',
+  'src/navigation.c',
   nion_resources,
   include_directories: include_directories('.'),
   dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
