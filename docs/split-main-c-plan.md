@@ -151,8 +151,12 @@
 - [x] 2026-09-07: 生成 `docs/main-c-function-boundaries.md`(ast-grep 精确函数边界表,子代理分工的地图)
 - [x] 2026-09-07: **一期 `session.c` 核心拆分完成并提交**(`6d3a212`)——nion_save_session / nion_schedule_session_save / nion_session_save_timeout 抽出,零 UI 依赖
 - [x] 2026-09-07: 更新本 plan,新增 §5.5 子代理分工与协作铁律(给 Jeanne 的 IDES 组织形态示范)
-- [ ] 待办: WSL 编译验证 session 拆分(依赖安装中)
-- [ ] 待办: 修 `release/manifest` 缺失导致的本地编译坑(已补最小可用版)
+- [x] 2026-09-07: **session 拆分编译验证通过**(e3 远程 Docker: `[12/12] Linking target nion` + `DONE 5.3s`)。本地 WSL2 Docker 反复卡死 → 转 e3(Ubuntu 26.04 + Docker 29.6.1) 一次通过。踩坑: `.dockerignore` 里 `*.md` 误排除了 `THIRD_PARTY_NOTICES.md`(meson.build 硬依赖),去掉后编译通过。
+- [x] 2026-09-07: **沉淀 `c-split-verify` skill**(本地 Docker 卡死转战远程 Linux 机器 + `.dockerignore` 坑 + 用 `Linking target` 判断编译通过)
+- [x] 2026-09-07: **建 worktree 隔离并行拆分**(方案 B): `nion-wt-preferences`(分支 `refactor/extract-preferences`)。子代理**只产出 .c/.h + 改 main.c,不碰 meson.build**(方案 A 的 meson.build 统一更新原则,合并时由主 agent 补)。
+- [x] 2026-09-07: **评估 download 依赖闭包 → 结论: 不派子代理**。`nion_save_download_history`/`nion_load_download_history` 虽名义为"数据函数",但**深度操作 UI 控件**(`item->progress_bar`/`gtk_*`),与 UI 回调耦合深,属高耦合模块,留后期(归 UI 域)。一期真正干净的纯逻辑模块: session(已拆)、preferences(拆中)。
+- [ ] 待办: 合并 preferences 子代理产出 + 更新 meson.build 源列表 + 编译验证
+- [ ] 待办: 一期剩余模块(如需) — 无其他干净纯逻辑模块,转二期/三期(UI 域,主 agent 把关)
 
 ---
 *本文档由 IDES agent (rush·暗河) 协助生成,遵循 NiOn 既有拆分纪律。*
