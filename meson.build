@@ -65,6 +65,7 @@ executable(
   'src/privacy.c',
   'src/session.c',
   'src/preferences.c',
+  'src/tor.c',
   nion_resources,
   include_directories: include_directories('.'),
   dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
