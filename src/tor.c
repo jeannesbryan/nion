@@ -22,6 +22,10 @@
 /* Forward declaration: nion_read_tor_line is defined after on_tor_line_read. */
 static void nion_read_tor_line(NionApp *app);
 
+/* Forward declaration: nion_store_tor_log is defined after nion_tor_startup_timeout,
+ * but called by the latter before its definition. */
+static void nion_store_tor_log(NionApp *app, const gchar *line);
+
 static gchar *nion_find_tor_binary(void)
 {
     const gchar *override = g_getenv("NION_TOR_BINARY");
