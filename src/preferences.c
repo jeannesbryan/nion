@@ -34,7 +34,7 @@ static gboolean nion_security_level_parse(const gchar *value, NionSecurityLevel 
     return TRUE;
 }
 
-static void nion_load_preferences(NionApp *app)
+void nion_load_preferences(NionApp *app)
 {
     app->restore_session = TRUE;
     app->block_third_party_cookies = FALSE;
@@ -124,7 +124,7 @@ static void nion_load_preferences(NionApp *app)
     }
 }
 
-static void nion_save_preferences(NionApp *app)
+void nion_save_preferences(NionApp *app)
 {
     if (!app || app->is_private || !app->preferences_file)
         return;
