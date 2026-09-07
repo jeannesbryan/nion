@@ -66,6 +66,7 @@ executable(
   'src/tor-core.c',
   'src/network.c',
   'src/session.c',
+  'src/tabs.c',
   nion_resources,
   include_directories: include_directories('.'),
   dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
