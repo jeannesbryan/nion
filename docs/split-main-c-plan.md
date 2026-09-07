@@ -158,6 +158,8 @@
 - [x] 2026-09-07: **preferences 拆分合并完成 + 编译验证通过**(`2fd7af6` 合并, `c212c21` static 修复)。e3 编译: `[13/13] Linking target nion` + `DONE 5.5s`, 0 错误。main.c 9003→8873 行。
 - [x] 2026-09-07: **子代理分头拆机制跑通**(worktree 隔离 + 并行拆 + 合并 + e3 编译验证)。派子代理经验: 必须明确 static 边界(哪些导出/哪些内部)。
 - [x] 2026-09-07: **UI 域拆分决策: 暂不拆,留给 Jeanne 练手**。UI 模块(91 函数/1220 gtk_ 调用)是 main.c 主体,拆解耦合深(经 NionApp 状态互链),但**机制已跑通**,Jeanne 可自行用同样方式拆。一期聚焦 session+preferences(纯逻辑) 示范"高效拆分机制"。
+- [x] 2026-09-07: **tor 域拆分合并 + 编译验证通过**(`a0f0176` 合并, `e37d2ab` static 前向声明修复)。e3 编译: `[14/14] Linking target nion` + `DONE 5.3s`, 0 错误。tor.c 拆出 788 行(tor/网络/进程运行时, 22 函数)。main.c 9003→8110 行。
+- [x] 2026-09-07: **main.c 达"只剩 UI 域"里程碑**。已拆: session(122)/preferences(141)/tor(788)。main.c 8110 行,余下主要是 UI 域(download/bookmark/tab/site-info/address 等, 162 函数), 留给 Jeanne 练手。**子代理分头拆机制全流程跑通**(worktree 隔离+精确边界+static 边界+合并+e3 编译验证)。
 - [ ] 待办: (可选) 后续按需拆 UI 域(整域拆分,download/bookmark/tab),或留 Jeanne 自行推进
 
 ---
