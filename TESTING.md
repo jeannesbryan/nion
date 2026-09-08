@@ -19,7 +19,7 @@ Final live smoke test:
 Static final guard:
 
 ```bash
-./scripts/test-hardening-stage3-1.7.0.sh
+./scripts/test-hardening-stage3-2.0.0.sh
 ./scripts/release-preflight.sh
 ```
 

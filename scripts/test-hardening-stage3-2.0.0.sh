@@ -33,9 +33,9 @@ grep -rFq 'NION_SECURITY_SAFEST' src || fail "Security Level Safest implementati
 grep -rFq 'WEBKIT_NETWORK_PROXY_MODE_CUSTOM' src || fail "Tor custom proxy missing"
 grep -rFq 'socks://127.0.0.1:9' src || fail "dead-SOCKS fail-closed guard missing"
 grep -rFq 'webkit_settings_set_enable_webrtc(settings, FALSE)' src || fail "WebRTC hardening missing"
-pass "1.7.0 security/fail-closed invariants"
+pass "2.0.0 security/fail-closed invariants"
 
-if grep -RInE --exclude='CHANGELOG.md' --exclude='TESTING.md' --exclude='test-hardening-stage3-1.7.0.sh' \
+if grep -RInE --exclude='CHANGELOG.md' --exclude='TESTING.md' --exclude='test-hardening-stage3-2.0.0.sh' \
   'Current development: 2\.0\.0|development — Stage [12]|Development Stage [12]' README.md BUILDING.md PRIVACY.md SECURITY.md data release/manifest 2>/dev/null; then
   fail "stale 2.0.0 development marker remains on release surfaces"
 fi

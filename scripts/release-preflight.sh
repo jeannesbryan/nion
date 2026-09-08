@@ -112,7 +112,7 @@ for test in \
   scripts/test-hardening-1.6.0.sh \
   scripts/test-security-levels-stage1.sh \
   scripts/test-escape-guards-stage2.sh \
-  scripts/test-hardening-stage3-1.7.0.sh; do
+  scripts/test-hardening-stage3-2.0.0.sh; do
   if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
 done
 
