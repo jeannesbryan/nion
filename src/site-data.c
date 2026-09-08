@@ -745,12 +745,15 @@ static void nion_forget_site_local_state(NionApp *app, const gchar *uri)
             g_hash_table_remove(app->content_blocking_disabled, site_key);
         if (app->autoplay_allowed_sites)
             g_hash_table_remove(app->autoplay_allowed_sites, site_key);
+        if (app->preferred_onion)
+            g_hash_table_remove(app->preferred_onion, site_key);
 
         if (!app->is_private) {
             nion_save_site_zoom(app);
             nion_save_site_javascript(app);
             nion_save_content_blocking(app);
             nion_save_autoplay(app);
+            nion_save_preferred_onion(app);
         }
 
         /* Apply reset defaults immediately to already-open matching tabs. */

@@ -30,6 +30,14 @@ void nion_load_autoplay(NionApp *app);
 WebKitWebsitePolicies *nion_website_policies_for_uri(NionApp *app, const gchar *uri);
 void nion_policy_decision_use_for_uri(NionTab *tab, WebKitPolicyDecision *decision, const gchar *uri);
 
+/* ---- Preferred Onion-Location per site (v2.1 #5) ---- */
+gchar *nion_site_key_for_uri(const gchar *uri);
+void nion_save_preferred_onion(NionApp *app);
+void nion_load_preferred_onion(NionApp *app);
+gboolean nion_remember_preferred_onion(NionApp *app, const gchar *site_key,
+                                       const gchar *onion_uri);
+gchar *nion_preferred_onion_for_site_key(NionApp *app, const gchar *site_key);
+
 /* New Identity clean slate (v2.1): wipe every per-site behavioral rule
  * (zoom, JavaScript, content-blocking, autoplay) for one window. Persistent
  * profiles also drop their on-disk rule files. */

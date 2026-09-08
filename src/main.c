@@ -198,6 +198,22 @@ static void nion_set_onion_location(NionTab *tab, const gchar *candidate)
     if (!normalized || !*normalized || !nion_is_valid_onion_location(tab, normalized))
         g_clear_pointer(&normalized, g_free);
 
+    /* A genuinely advertised .onion twin of the current clearnet page is
+     * remembered per site (v2.1 #5) so future visits can offer the jump even
+     * if the site stops sending Onion-Location. Only the fresh detection
+     * path (valid candidate on an https clearnet page) persists; clearing
+     * (normalized == NULL) never does. */
+    if (normalized && tab->app && !tab->app->is_private && tab->web_view) {
+        const gchar *page_uri = webkit_web_view_get_uri(tab->web_view);
+        if (nion_uri_is_https_clearnet(page_uri)) {
+            gchar *site_key = nion_site_key_for_uri(page_uri);
+            if (site_key) {
+                nion_remember_preferred_onion(tab->app, site_key, normalized);
+                g_free(site_key);
+            }
+        }
+    }
+
     if (g_strcmp0(tab->onion_location, normalized) == 0) {
         g_free(normalized);
         return;
@@ -583,6 +599,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     nion_load_site_javascript(app);
     nion_load_content_blocking(app);
     nion_load_autoplay(app);
+    nion_load_preferred_onion(app);
     nion_prepare_content_filter(app);
     gboolean tor_port_ok = nion_choose_tor_port(app);
     if (!nion_prepare_network(app)) {

@@ -852,17 +852,49 @@ void nion_update_controls(NionApp *app)
     nion_update_bookmark_button(app);
 }
 
+/* Resolve the .onion twin to offer for the current tab: prefer a freshly
+ * advertised Onion-Location (tab->onion_location); otherwise fall back to the
+ * remembered preferred onion for this clearnet site (v2.1 #5) so repeat
+ * visits can offer the jump directly even when the page stops advertising. */
+static gchar *nion_current_onion_for_tab(NionTab *tab)
+{
+    if (!tab || !tab->app || !tab->web_view)
+        return NULL;
+    if (tab->onion_location && *tab->onion_location)
+        return g_strdup(tab->onion_location);
+
+    const gchar *uri = webkit_web_view_get_uri(tab->web_view);
+    if (!nion_uri_is_https_clearnet(uri))
+        return NULL;
+    gchar *site_key = nion_site_key_for_uri(uri);
+    if (!site_key)
+        return NULL;
+    gchar *remembered = nion_preferred_onion_for_site_key(tab->app, site_key);
+    g_free(site_key);
+    return remembered;
+}
+
 void nion_update_onion_button(NionApp *app)
 {
     if (!app || !app->onion_button)
         return;
 
     NionTab *tab = nion_current_tab(app);
-    gboolean visible = tab && tab->onion_location && *tab->onion_location;
+    gchar *onion = nion_current_onion_for_tab(tab);
+    gboolean visible = onion && *onion;
+    gboolean remembered = visible && tab &&
+        !(tab->onion_location && *tab->onion_location);
     gtk_widget_set_visible(app->onion_button, visible);
     gtk_widget_set_sensitive(app->onion_button, visible && app->tor_ready);
-    gtk_widget_set_tooltip_text(app->onion_button,
-        visible ? tab->onion_location : "No Onion-Location advertised by this page");
+    if (remembered) {
+        gchar *tip = g_strdup_printf("Open the .onion version of this site (remembered): %s", onion);
+        gtk_widget_set_tooltip_text(app->onion_button, tip);
+        g_free(tip);
+    } else {
+        gtk_widget_set_tooltip_text(app->onion_button,
+            visible ? onion : "No Onion-Location advertised by this page");
+    }
+    g_free(onion);
 }
 
 static void on_onion_button_clicked(GtkButton *button, gpointer user_data)
@@ -870,10 +902,13 @@ static void on_onion_button_clicked(GtkButton *button, gpointer user_data)
     (void)button;
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
-    if (!tab || !tab->onion_location || !app->tor_ready)
+    if (!tab || !app->tor_ready)
         return;
 
-    nion_new_tab(app, tab->onion_location, TRUE);
+    gchar *onion = nion_current_onion_for_tab(tab);
+    if (onion && *onion)
+        nion_new_tab(app, onion, TRUE);
+    g_free(onion);
 }
 
 void nion_close_http_warning(NionTab *tab)
