@@ -246,6 +246,9 @@ struct _NionApp {
     gboolean tor_saw_corruption;
     gboolean tor_ready;
     gboolean tor_failed;
+    /* Set while a deliberate New Identity circuit rotation is in flight, so
+     * the old Tor child's exit callback does not trigger the error path. */
+    gboolean tor_switching_identity;
     gint tor_bootstrap_percent;
     gboolean shutting_down;
     gboolean close_confirm_open;

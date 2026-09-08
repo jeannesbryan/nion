@@ -2142,6 +2142,7 @@ void nion_build_ui(NionApp *app)
 
     GMenu *menu = g_menu_new();
     g_menu_append(menu, "New Private Window", "win.private-window");
+    g_menu_append(menu, "New Identity", "win.new-identity");
     g_menu_append(menu, "Find in Page", "win.find");
     g_menu_append(menu, "Reload Without Cache", "win.hard-reload");
     GMenu *zoom_menu = g_menu_new();

@@ -26,6 +26,12 @@ void on_shutdown(GApplication *application, gpointer user_data);
 void action_private_window(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_exit(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
+/* Tor New Identity / circuit rotation (v2.1). Stops the bundled Tor cleanly,
+ * rotates guard state for fresh circuits, relaunches and runs the fail-closed
+ * dance through NionTorCallbacks; private windows follow via the tor-state
+ * sync. Safe to trigger from a Private Window (routes to the owner). */
+void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+
 /* Window close-request handler (connected by the UI chrome builder in
  * main.c / ui.c for both normal and private windows). */
 gboolean on_window_close_request(GtkWindow *window, gpointer user_data);

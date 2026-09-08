@@ -70,6 +70,8 @@ static void nion_open_private_window(NionApp *source);
 
 void nion_set_tor_ready(NionApp *app, gboolean ready)
 {
+    if (ready)
+        app->tor_switching_identity = FALSE;
     app->tor_ready = ready;
     app->tor_failed = ready ? FALSE : app->tor_failed;
 
@@ -121,6 +123,9 @@ void nion_set_tor_progress(NionApp *app, gint percent)
 
 void nion_set_tor_error(NionApp *app, const gchar *message)
 {
+    /* A failed rotation (or any Tor error) releases the switching guard so a
+     * later New Identity request is allowed to try again. */
+    app->tor_switching_identity = FALSE;
     app->tor_ready = FALSE;
     app->tor_failed = TRUE;
 
@@ -158,6 +163,81 @@ void action_private_window(GSimpleAction *action, GVariant *parameter, gpointer 
     (void)action;
     (void)parameter;
     nion_open_private_window(user_data);
+}
+
+/* ---- New Identity / circuit rotation (v2.1) ---- */
+
+static void nion_rotate_tor_guard_state(NionApp *app)
+{
+    /* A fresh identity needs fresh entry guards. Tor keeps its guard list in
+     * the DataDirectory `state` file; move it aside (never delete silently)
+     * so the restarted Tor selects new guards and builds new circuits. */
+    if (!app || !app->tor_dir)
+        return;
+
+    gchar *state_file = g_build_filename(app->tor_dir, "state", NULL);
+    if (g_file_test(state_file, G_FILE_TEST_EXISTS)) {
+        gchar *target = g_build_filename(app->tor_dir, "state.previous-identity", NULL);
+        if (g_rename(state_file, target) != 0) {
+            g_warning("New Identity: could not rotate Tor guard state %s: %s",
+                      state_file, g_strerror(errno));
+        } else {
+            g_printerr("[NiOn] New Identity: rotated Tor guard state for fresh circuits.\n");
+        }
+        g_free(target);
+    }
+    g_free(state_file);
+
+    /* A hard-killed Tor can leave a stale lock; it must not block the restart. */
+    gchar *lock_file = g_build_filename(app->tor_dir, "lock", NULL);
+    if (g_file_test(lock_file, G_FILE_TEST_EXISTS))
+        g_unlink(lock_file);
+    g_free(lock_file);
+}
+
+void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    NionApp *app = user_data;
+    if (!app)
+        return;
+
+    /* Tor is owned by the normal window. Triggering from a Private Window
+     * rotates the owner's circuit; every Private Window follows through the
+     * existing tor-state sync in nion_set_tor_ready / _progress / _error. */
+    if (app->is_private)
+        app = app->owner;
+    if (!app || app->shutting_down)
+        return;
+    if (app->tor_switching_identity) {
+        nion_set_status(app, "○ NEW IDENTITY — circuit rotation already in progress…");
+        return;
+    }
+    app->tor_switching_identity = TRUE;
+
+    /* Fail closed for the whole rotation: stop in-flight loads/downloads and
+     * move every window to "connecting" (tor_ready = FALSE blocks new nav). */
+    nion_stop_all_web_activity(app);
+    nion_cancel_active_downloads(app);
+    nion_set_tor_progress(app, 0);
+    nion_set_status(app, "○ NEW IDENTITY — resetting Tor circuit…");
+
+    nion_stop_tor_gracefully(app);
+    nion_rotate_tor_guard_state(app);
+
+    if (!nion_choose_tor_port(app)) {
+        app->tor_switching_identity = FALSE;
+        return; /* error already surfaced via nion_set_tor_error */
+    }
+    nion_apply_network_proxy(app);
+    if (!nion_start_tor(app)) {
+        app->tor_switching_identity = FALSE;
+        return; /* error already surfaced via nion_set_tor_error */
+    }
+
+    /* The switching guard is released by nion_set_tor_ready(TRUE) once the
+     * new circuit finishes bootstrapping, or by nion_set_tor_error on failure. */
 }
 
 void action_exit(GSimpleAction *action, GVariant *parameter, gpointer user_data)

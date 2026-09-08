@@ -466,14 +466,24 @@ static void on_tor_process_waited(GObject *source, GAsyncResult *result, gpointe
         app->tor_startup_timeout_id = 0;
     }
 
-    if (!g_subprocess_wait_finish(process, result, &error)) {
-        if (!app->shutting_down) {
-            gchar *message = g_strdup_printf("Could not monitor Tor: %s",
-                                             error ? error->message : "unknown error");
-            nion_store_tor_log(app, message);
-            nion_set_tor_error(app, message);
-            g_free(message);
-        }
+    /* Consume the async result so the wait is fully reaped. */
+    gboolean finished = g_subprocess_wait_finish(process, result, &error);
+
+    /* If this is the old Tor we stopped deliberately (normal shutdown or a
+     * New Identity rotation), do nothing further: the error path must not run
+     * and the new runtime's tor-runtime.ini / app->tor_* state must be left
+     * untouched. */
+    if (app->shutting_down || app->tor_switching_identity) {
+        g_clear_error(&error);
+        return;
+    }
+
+    if (!finished) {
+        gchar *message = g_strdup_printf("Could not monitor Tor: %s",
+                                         error ? error->message : "unknown error");
+        nion_store_tor_log(app, message);
+        nion_set_tor_error(app, message);
+        g_free(message);
         g_clear_error(&error);
         return;
     }
