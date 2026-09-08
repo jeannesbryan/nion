@@ -81,6 +81,11 @@ static void nion_reload_crashed_tab(NionTab *tab)
     if (s_webview_callbacks.reload_crashed_tab) s_webview_callbacks.reload_crashed_tab(tab);
 }
 
+static void nion_request_new_identity(NionApp *app)
+{
+    if (s_webview_callbacks.request_new_identity) s_webview_callbacks.request_new_identity(app);
+}
+
 static gchar * nion_tab_fallback_title(NionTab *tab)
 {
     return s_webview_callbacks.tab_fallback_title ? s_webview_callbacks.tab_fallback_title(tab) : NULL;
@@ -622,6 +627,17 @@ gboolean on_webview_decide_policy(WebKitWebView *web_view,
     if (uri && g_str_has_prefix(uri, "nion://reload-crashed")) {
         webkit_policy_decision_ignore(decision);
         nion_reload_crashed_tab(tab);
+        return TRUE;
+    }
+
+    /* Internal action from the Start Page ("New Identity" button). Only a
+     * direct user click may rotate the circuit; an auto-navigation from any
+     * page (remote or local) without a gesture is ignored so a site cannot
+     * force repeated rotations. */
+    if (uri && g_str_has_prefix(uri, "nion://new-identity")) {
+        webkit_policy_decision_ignore(decision);
+        if (user_gesture)
+            nion_request_new_identity(tab->app);
         return TRUE;
     }
 

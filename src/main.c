@@ -387,6 +387,17 @@ static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select)
     return nion_new_tab_internal(app, uri, select, NULL);
 }
 
+/* Adapter for the Start Page "New Identity" button: webview.c dispatches
+ * nion://new-identity here through NionWebviewCallbacks; activating the
+ * window action routes through the same orchestration as the menu item and
+ * Ctrl+Shift+U. */
+static void nion_activate_new_identity(NionApp *app)
+{
+    if (app && app->window)
+        g_action_group_activate_action(G_ACTION_GROUP(app->window),
+                                       "new-identity", NULL);
+}
+
 static void nion_install_actions(NionApp *app)
 {
     const GActionEntry actions[] = {
@@ -555,6 +566,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
         .close_http_warning = nion_close_http_warning,
         .show_http_warning = nion_show_http_warning,
         .show_external_protocol_prompt = nion_show_external_protocol_prompt,
+        .request_new_identity = nion_activate_new_identity,
     };
     nion_webview_set_callbacks(&webview_callbacks);
 
