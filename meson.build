@@ -69,6 +69,7 @@ executable(
   'src/tabs.c',
   'src/webview.c',
   'src/bookmarks.c',
+  'src/downloads.c',
   nion_resources,
   include_directories: include_directories('.'),
   dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
