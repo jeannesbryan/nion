@@ -50,3 +50,6 @@ vgcore.*
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# WebKit ephemeral session artifacts (never commit)
+ephemeral/
