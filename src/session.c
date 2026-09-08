@@ -124,6 +124,8 @@ void nion_save_session(NionApp *app, gboolean clean_shutdown)
         const gchar *uri = tab->display_uri_override;
         if (!uri || !*uri)
             uri = webkit_web_view_get_uri(tab->web_view);
+        if (tab->discarded && tab->discard_uri)
+            uri = tab->discard_uri;
         if (uri && *uri && !g_str_equal(uri, "about:blank") &&
             strlen(uri) <= NION_MAX_SAVED_URI_BYTES)
             g_key_file_set_string(session, group, "uri", uri);

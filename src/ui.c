@@ -384,12 +384,12 @@ static gchar *nion_home_html(NionApp *app)
         detail = g_strdup("Browsing unlocks automatically when Tor reaches 100% bootstrap.");
     }
 
-    /* Privacy-dashboard tiles (v2.1). Discarded count is the Feature #1
-     * (tab discard) placeholder: 0 is correct until suspension lands. */
+    /* Privacy-dashboard tiles (v2.1). Discarded reflects live suspended tabs. */
     const gchar *security_label = nion_security_level_label(app->security_level);
     guint active_tabs = (app && app->notebook)
         ? gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) : 0;
-    const guint discarded_tabs = 0;
+    guint discarded_tabs = (app && app->notebook)
+        ? (guint)nion_count_discarded_tabs(app) : 0;
 
     gchar *html = g_strdup_printf(
         "<!doctype html><html><head><meta charset='utf-8'>"
@@ -1262,6 +1262,15 @@ static void on_notebook_switch_page(GtkNotebook *notebook,
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
 
+    /* v2.1 tab discard: switching to a suspended tab revives it through the
+     * normal Tor-gated load path, and the freshly active tab is marked
+     * recently-used so the background sweep leaves it alone. */
+    if (tab) {
+        if (tab->discarded)
+            nion_resume_discarded_tab(tab);
+        nion_tab_touch(tab);
+    }
+
     if (tab && app->tor_ready && webkit_web_view_is_loading(tab->web_view) &&
         !tab->home_page && !tab->error_page) {
         gint percent = (gint)(webkit_web_view_get_estimated_load_progress(tab->web_view) * 100.0 + 0.5);
@@ -1280,6 +1289,18 @@ static void on_notebook_switch_page(GtkNotebook *notebook,
     if (app->find_bar && gtk_widget_get_visible(app->find_bar))
         nion_find_run(app);
     nion_schedule_session_save(app);
+}
+
+static gboolean on_discard_sweep_tick(gpointer user_data)
+{
+    NionApp *app = user_data;
+    if (!app || app->shutting_down)
+        return G_SOURCE_REMOVE;
+    gint before = nion_count_discarded_tabs(app);
+    nion_discard_idle_tabs(app);
+    if (nion_count_discarded_tabs(app) != before)
+        nion_refresh_home_pages(app);
+    return G_SOURCE_CONTINUE;
 }
 
 static void on_notebook_page_reordered(GtkNotebook *notebook,
@@ -2278,6 +2299,10 @@ void nion_build_ui(NionApp *app)
     g_signal_connect(app->new_tab_button, "clicked", G_CALLBACK(on_new_tab_clicked), app);
     g_signal_connect(app->notebook, "switch-page", G_CALLBACK(on_notebook_switch_page), app);
     g_signal_connect(app->notebook, "page-reordered", G_CALLBACK(on_notebook_page_reordered), app);
+    if (!app->discard_sweep_source_id) {
+        app->discard_sweep_source_id =
+            g_timeout_add(NION_TAB_DISCARD_POLL_MS, on_discard_sweep_tick, app);
+    }
     g_signal_connect(app->window, "close-request", G_CALLBACK(on_window_close_request), app);
     g_signal_connect(app->window, "notify::fullscreened", G_CALLBACK(on_window_fullscreen_notify), app);
 

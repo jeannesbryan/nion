@@ -55,6 +55,22 @@ static void nion_reload_crashed_tab(NionTab *tab)
     if (s_tab_callbacks.reload_crashed_tab) s_tab_callbacks.reload_crashed_tab(tab);
 }
 
+static void nion_load_uri(NionTab *tab, const gchar *uri)
+{
+    if (s_tab_callbacks.load_uri) s_tab_callbacks.load_uri(tab, uri);
+}
+
+static gboolean nion_tab_is_current(NionTab *tab)
+{
+    if (!tab || !tab->app || !tab->app->notebook)
+        return FALSE;
+    GtkNotebook *notebook = GTK_NOTEBOOK(tab->app->notebook);
+    gint cur = gtk_notebook_get_current_page(notebook);
+    if (cur < 0)
+        return FALSE;
+    return gtk_notebook_get_nth_page(notebook, cur) == tab->page;
+}
+
 /* Static forward decls (source orderings preserved from main.c). */
 static void nion_update_tab_context_menu(NionTab *tab);
 static void nion_tab_context_popdown(NionTab *tab);
@@ -391,6 +407,8 @@ void nion_tab_free(gpointer data)
     g_clear_pointer(&tab->restore_uri, g_free);
     g_clear_object(&tab->home_return_item);
     g_clear_pointer(&tab->web_process_uri, g_free);
+    g_clear_pointer(&tab->discard_uri, g_free);
+    g_clear_pointer(&tab->discard_title, g_free);
     g_free(tab);
 }
 
@@ -758,6 +776,7 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
     GtkWidget *label = gtk_label_new("New Tab");
     GtkWidget *audio = gtk_button_new_from_icon_name("audio-volume-high-symbolic");
     GtkWidget *close = gtk_button_new_from_icon_name("window-close-symbolic");
+    GtkWidget *suspend = gtk_label_new("💤");
 
     gtk_widget_set_size_request(favicon, 16, 16);
     gtk_picture_set_can_shrink(GTK_PICTURE(favicon), TRUE);
@@ -766,6 +785,9 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
     gtk_widget_add_css_class(pin, "nion-tab-pin");
     gtk_widget_set_tooltip_text(pin, "Pinned tab");
     gtk_widget_set_visible(pin, FALSE);
+    gtk_widget_add_css_class(suspend, "nion-tab-suspend");
+    gtk_widget_set_tooltip_text(suspend, "Suspended tab — click to restore");
+    gtk_widget_set_visible(suspend, FALSE);
 
     gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
     gtk_label_set_width_chars(GTK_LABEL(label), 14);
@@ -783,6 +805,7 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
 
     gtk_box_append(GTK_BOX(box), favicon);
     gtk_box_append(GTK_BOX(box), pin);
+    gtk_box_append(GTK_BOX(box), suspend);
     gtk_box_append(GTK_BOX(box), label);
     gtk_box_append(GTK_BOX(box), audio);
     gtk_box_append(GTK_BOX(box), close);
@@ -790,6 +813,7 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
     tab->title_label = label;
     tab->favicon_picture = favicon;
     tab->pin_indicator = pin;
+    tab->suspend_indicator = suspend;
     tab->audio_button = audio;
     tab->tab_label_box = box;
     tab->tab_close_button = close;
@@ -805,4 +829,155 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
     gtk_widget_add_controller(box, GTK_EVENT_CONTROLLER(context_click));
 
     return box;
+}
+
+/* ---- Background Tab Discard (v2.1 #1) ---- */
+
+void nion_tab_touch(NionTab *tab)
+{
+    if (!tab)
+        return;
+    tab->last_active_msec = g_get_monotonic_time() / 1000;
+}
+
+static void nion_set_suspend_chip(NionTab *tab, gboolean show)
+{
+    if (!tab || !tab->suspend_indicator)
+        return;
+    gtk_widget_set_visible(tab->suspend_indicator, show);
+}
+
+static gboolean nion_tab_has_real_uri(NionTab *tab)
+{
+    if (!tab || !tab->web_view)
+        return FALSE;
+    const gchar *uri = tab->display_uri_override && *tab->display_uri_override
+        ? tab->display_uri_override
+        : webkit_web_view_get_uri(tab->web_view);
+    if (!uri || !*uri || g_str_equal(uri, "about:blank"))
+        return FALSE;
+    gchar *validation = NULL;
+    gboolean ok = nion_validate_uri(uri, &validation);
+    g_free(validation);
+    return ok;
+}
+
+void nion_tab_discard(NionTab *tab)
+{
+    if (!tab || !tab->app || !tab->app->notebook || !tab->web_view ||
+        tab->discarded || tab->home_page || tab->error_page ||
+        tab->web_process_terminated || tab->app->shutting_down)
+        return;
+
+    /* Never discard the active tab, pinned tabs, or audio-playing tabs. */
+    if (nion_tab_is_current(tab) || tab->pinned ||
+        webkit_web_view_is_playing_audio(tab->web_view))
+        return;
+    if (!nion_tab_has_real_uri(tab))
+        return;
+
+    const gchar *uri = tab->display_uri_override && *tab->display_uri_override
+        ? tab->display_uri_override
+        : webkit_web_view_get_uri(tab->web_view);
+
+    g_clear_pointer(&tab->discard_uri, g_free);
+    tab->discard_uri = g_strdup(uri);
+    g_clear_pointer(&tab->discard_title, g_free);
+    const gchar *title = webkit_web_view_get_title(tab->web_view);
+    tab->discard_title = g_strdup(title && *title ? title : uri);
+    tab->discard_muted = webkit_web_view_get_is_muted(tab->web_view);
+    tab->discarded = TRUE;
+    nion_set_suspend_chip(tab, TRUE);
+    /* Keep the real page title in the strip (the suspended doc has none). */
+    if (tab->title_label) {
+        gtk_label_set_text(GTK_LABEL(tab->title_label), tab->discard_title);
+        gtk_widget_set_tooltip_text(tab->title_label, tab->discard_title);
+    }
+    if (tab->favicon_picture)
+        gtk_widget_set_visible(tab->favicon_picture, FALSE);
+
+    /* Release the heavy page from the web process: stop the load and swap in
+     * a tiny internal suspended document. The shell, tab-strip entry, pinned
+     * state and saved URI all survive; the real page is re-fetched through
+     * Tor when the user clicks the tab again. */
+    webkit_web_view_stop_loading(tab->web_view);
+    gchar *html = g_strdup_printf(
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<style>body{font-family:system-ui,sans-serif;background:#f6f5f4;color:#414141;"
+        "display:flex;align-items:center;justify-content:center;height:96vh;margin:0}"
+        "div{text-align:center}.zz{font-size:46px}.m{font-size:15px;margin-top:12px}"
+        ".s{font-size:12.5px;color:#8f8f8c;margin-top:6px}</style></head><body>"
+        "<div><div class='zz'>💤</div><div class='m'>Suspended — click this tab to reload</div>"
+        "<div class='s'>Background tab discarded to save memory</div></div></body></html>");
+    webkit_web_view_set_zoom_level(tab->web_view, 1.0);
+    webkit_web_view_load_html(tab->web_view, html, "about:blank");
+    g_free(html);
+
+    nion_schedule_session_save(tab->app);
+}
+
+void nion_resume_discarded_tab(NionTab *tab)
+{
+    if (!tab || !tab->app || !tab->app->notebook || !tab->web_view ||
+        !tab->discarded)
+        return;
+
+    gchar *uri = g_strdup(tab->discard_uri);
+    gboolean was_muted = tab->discard_muted;
+    tab->discarded = FALSE;
+    nion_set_suspend_chip(tab, FALSE);
+    g_clear_pointer(&tab->discard_uri, g_free);
+    g_clear_pointer(&tab->discard_title, g_free);
+
+    if (was_muted)
+        webkit_web_view_set_is_muted(tab->web_view, TRUE);
+
+    if (uri && *uri && !g_str_equal(uri, "about:blank")) {
+        nion_load_uri(tab, uri);
+    } else {
+        nion_load_home(tab);
+    }
+    g_free(uri);
+    nion_tab_touch(tab);
+    nion_schedule_session_save(tab->app);
+}
+
+gint nion_count_discarded_tabs(NionApp *app)
+{
+    if (!app || !app->notebook)
+        return 0;
+    GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    gint count = 0;
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (tab && tab->discarded)
+            count++;
+    }
+    return count;
+}
+
+void nion_discard_idle_tabs(NionApp *app)
+{
+    if (!app || !app->notebook || app->shutting_down)
+        return;
+
+    gint64 now = g_get_monotonic_time() / 1000;
+    GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    gint current = gtk_notebook_get_current_page(notebook);
+
+    for (gint i = 0; i < pages; i++) {
+        if (i == current)
+            continue;
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (!tab || tab->discarded || tab->pinned || tab->home_page ||
+            tab->error_page || tab->web_process_terminated)
+            continue;
+        if (tab->last_active_msec > 0 &&
+            (now - tab->last_active_msec) >= NION_TAB_DISCARD_AFTER_MS)
+            nion_tab_discard(tab);
+    }
 }

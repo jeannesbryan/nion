@@ -377,6 +377,7 @@ static NionTab *nion_new_tab_internal(NionApp *app, const gchar *uri, gboolean s
     if (select)
         gtk_notebook_set_current_page(GTK_NOTEBOOK(app->notebook), page_num);
 
+    nion_tab_touch(tab);
     nion_update_controls(app);
     nion_schedule_session_save(app);
     return tab;
@@ -540,6 +541,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
         .update_controls = nion_update_controls,
         .clear_retry = nion_clear_retry,
         .load_home = nion_load_home,
+        .load_uri = nion_load_uri,
         .reload_crashed_tab = nion_reload_crashed_tab,
     };
     nion_tabs_set_callbacks(&tab_callbacks);

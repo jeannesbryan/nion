@@ -446,6 +446,10 @@ static void nion_finish_close(NionApp *app)
         g_source_remove(app->session_save_source_id);
         app->session_save_source_id = 0;
     }
+    if (app->discard_sweep_source_id) {
+        g_source_remove(app->discard_sweep_source_id);
+        app->discard_sweep_source_id = 0;
+    }
     nion_save_session(app, TRUE);
     nion_save_download_history(app);
     app->close_confirmed = TRUE;
@@ -734,6 +738,10 @@ static void nion_cleanup(NionApp *app)
     if (app->session_save_source_id) {
         g_source_remove(app->session_save_source_id);
         app->session_save_source_id = 0;
+    }
+    if (app->discard_sweep_source_id) {
+        g_source_remove(app->discard_sweep_source_id);
+        app->discard_sweep_source_id = 0;
     }
 
     app->shutting_down = TRUE;
