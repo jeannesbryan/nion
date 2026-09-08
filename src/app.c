@@ -195,6 +195,103 @@ static void nion_rotate_tor_guard_state(NionApp *app)
     g_free(lock_file);
 }
 
+/* ---- New Identity data purge (async, gated before the Tor restart) ---- */
+
+typedef struct {
+    NionApp *owner;           /* the normal window that owns the circuit */
+    GPtrArray *managers;      /* g_object_ref'd WebKitWebsiteDataManager* */
+    guint pending;            /* clears still in flight */
+    gboolean saw_error;
+} NionIdentityPurge;
+
+static void nion_finish_new_identity(NionApp *app);
+
+static void on_identity_purge_data_cleared(GObject *source, GAsyncResult *result,
+                                           gpointer user_data)
+{
+    NionIdentityPurge *purge = user_data;
+    NionApp *app = purge->owner;
+    GError *error = NULL;
+
+    gboolean ok = webkit_website_data_manager_clear_finish(
+        WEBKIT_WEBSITE_DATA_MANAGER(source), result, &error);
+    if (!ok) {
+        purge->saw_error = TRUE;
+        g_warning("New Identity: website-data clear failed: %s",
+                  error ? error->message : "unknown error");
+        g_clear_error(&error);
+    }
+
+    if (--purge->pending > 0)
+        return;
+
+    /* All clears finished: release our refs, then resume the rotation. */
+    gboolean had_error = purge->saw_error;
+    for (guint i = 0; i < purge->managers->len; i++)
+        g_object_unref(g_ptr_array_index(purge->managers, i));
+    g_ptr_array_free(purge->managers, TRUE);
+    g_free(purge);
+
+    if (!app || app->shutting_down)
+        return;
+
+    nion_set_status(app, had_error
+        ? "○ NEW IDENTITY — data purge incomplete; restarting Tor…"
+        : "○ NEW IDENTITY — old identity data cleared; restarting Tor…");
+    nion_finish_new_identity(app);
+}
+
+static void nion_start_identity_data_purge(NionApp *app)
+{
+    NionIdentityPurge *purge = g_new0(NionIdentityPurge, 1);
+    purge->owner = app;
+    purge->managers = g_ptr_array_new();
+
+    /* Normal (persistent) session — the primary target. */
+    if (app->network_session) {
+        WebKitWebsiteDataManager *mgr =
+            webkit_network_session_get_website_data_manager(app->network_session);
+        if (mgr)
+            g_ptr_array_add(purge->managers, g_object_ref(mgr));
+    }
+
+    /* Every open Private Window uses its own ephemeral session built over
+     * the same (now rotating) circuit; clear those too so no old-identity
+     * site state survives anywhere. Managers are ref'd so a window closing
+     * mid-purge cannot invalidate the async clear. */
+    if (app->private_windows) {
+        for (guint i = 0; i < app->private_windows->len; i++) {
+            NionApp *priv = g_ptr_array_index(app->private_windows, i);
+            if (!priv || !priv->network_session)
+                continue;
+            WebKitWebsiteDataManager *mgr =
+                webkit_network_session_get_website_data_manager(priv->network_session);
+            if (mgr)
+                g_ptr_array_add(purge->managers, g_object_ref(mgr));
+        }
+    }
+
+    if (purge->managers->len == 0) {
+        g_ptr_array_free(purge->managers, TRUE);
+        g_free(purge);
+        nion_finish_new_identity(app);
+        return;
+    }
+
+    nion_set_status(app, "○ NEW IDENTITY — clearing old identity data…");
+
+    for (guint i = 0; i < purge->managers->len; i++) {
+        purge->pending++;
+        webkit_website_data_manager_clear(
+            g_ptr_array_index(purge->managers, i),
+            WEBKIT_WEBSITE_DATA_ALL,   /* cookies, storage, DOM cache, caches, … */
+            0,                         /* timespan 0 = everything */
+            NULL,
+            on_identity_purge_data_cleared,
+            purge);
+    }
+}
+
 void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     (void)action;
@@ -226,6 +323,15 @@ void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer us
     nion_stop_tor_gracefully(app);
     nion_rotate_tor_guard_state(app);
 
+    /* Purge cookies / storage / caches for the old identity while Tor is
+     * down and navigation is blocked. The Tor restart is gated on the async
+     * purge completing, so the new circuit never sees stale site state. */
+    nion_start_identity_data_purge(app);
+    /* nion_finish_new_identity() resumes below when every clear finishes. */
+}
+
+static void nion_finish_new_identity(NionApp *app)
+{
     if (!nion_choose_tor_port(app)) {
         app->tor_switching_identity = FALSE;
         return; /* error already surfaced via nion_set_tor_error */
