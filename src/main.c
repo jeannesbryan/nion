@@ -387,11 +387,23 @@ static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select)
     return nion_new_tab_internal(app, uri, select, NULL);
 }
 
+/* Adapter for the Start Page "New Identity" button: webview.c dispatches
+ * nion://new-identity here through NionWebviewCallbacks; activating the
+ * window action routes through the same orchestration as the menu item and
+ * Ctrl+Shift+U. */
+static void nion_activate_new_identity(NionApp *app)
+{
+    if (app && app->window)
+        g_action_group_activate_action(G_ACTION_GROUP(app->window),
+                                       "new-identity", NULL);
+}
+
 static void nion_install_actions(NionApp *app)
 {
     const GActionEntry actions[] = {
         { "new-tab", action_new_tab, NULL, NULL, NULL, {0} },
         { "private-window", action_private_window, NULL, NULL, NULL, {0} },
+        { "new-identity", action_new_identity, NULL, NULL, NULL, {0} },
         { "close-tab", action_close_tab, NULL, NULL, NULL, {0} },
         { "reopen-closed-tab", action_reopen_closed_tab, NULL, NULL, NULL, {0} },
         { "focus-location", action_focus_location, NULL, NULL, NULL, {0} },
@@ -424,6 +436,7 @@ static void nion_install_actions(NionApp *app)
 
     const gchar *new_tab_accels[] = { "<Primary>t", NULL };
     const gchar *private_window_accels[] = { "<Primary><Shift>p", NULL };
+    const gchar *new_identity_accels[] = { "<Primary><Shift>u", NULL };
     const gchar *close_tab_accels[] = { "<Primary>w", NULL };
     const gchar *reopen_closed_tab_accels[] = { "<Primary><Shift>t", NULL };
     const gchar *focus_accels[] = { "<Primary>l", "F6", NULL };
@@ -444,6 +457,7 @@ static void nion_install_actions(NionApp *app)
 
     gtk_application_set_accels_for_action(app->application, "win.new-tab", new_tab_accels);
     gtk_application_set_accels_for_action(app->application, "win.private-window", private_window_accels);
+    gtk_application_set_accels_for_action(app->application, "win.new-identity", new_identity_accels);
     gtk_application_set_accels_for_action(app->application, "win.close-tab", close_tab_accels);
     gtk_application_set_accels_for_action(app->application, "win.reopen-closed-tab", reopen_closed_tab_accels);
     gtk_application_set_accels_for_action(app->application, "win.focus-location", focus_accels);
@@ -552,6 +566,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
         .close_http_warning = nion_close_http_warning,
         .show_http_warning = nion_show_http_warning,
         .show_external_protocol_prompt = nion_show_external_protocol_prompt,
+        .request_new_identity = nion_activate_new_identity,
     };
     nion_webview_set_callbacks(&webview_callbacks);
 

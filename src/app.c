@@ -10,6 +10,7 @@
 #include "types.h"
 #include "network.h"
 #include "per-site.h"
+#include "permission.h"
 #include "session.h"
 #include "downloads.h"
 #include "bookmarks.h"
@@ -70,6 +71,8 @@ static void nion_open_private_window(NionApp *source);
 
 void nion_set_tor_ready(NionApp *app, gboolean ready)
 {
+    if (ready)
+        app->tor_switching_identity = FALSE;
     app->tor_ready = ready;
     app->tor_failed = ready ? FALSE : app->tor_failed;
 
@@ -121,6 +124,9 @@ void nion_set_tor_progress(NionApp *app, gint percent)
 
 void nion_set_tor_error(NionApp *app, const gchar *message)
 {
+    /* A failed rotation (or any Tor error) releases the switching guard so a
+     * later New Identity request is allowed to try again. */
+    app->tor_switching_identity = FALSE;
     app->tor_ready = FALSE;
     app->tor_failed = TRUE;
 
@@ -158,6 +164,203 @@ void action_private_window(GSimpleAction *action, GVariant *parameter, gpointer 
     (void)action;
     (void)parameter;
     nion_open_private_window(user_data);
+}
+
+/* ---- New Identity / circuit rotation (v2.1) ---- */
+
+static void nion_rotate_tor_guard_state(NionApp *app)
+{
+    /* A fresh identity needs fresh entry guards. Tor keeps its guard list in
+     * the DataDirectory `state` file; move it aside (never delete silently)
+     * so the restarted Tor selects new guards and builds new circuits. */
+    if (!app || !app->tor_dir)
+        return;
+
+    gchar *state_file = g_build_filename(app->tor_dir, "state", NULL);
+    if (g_file_test(state_file, G_FILE_TEST_EXISTS)) {
+        gchar *target = g_build_filename(app->tor_dir, "state.previous-identity", NULL);
+        if (g_rename(state_file, target) != 0) {
+            g_warning("New Identity: could not rotate Tor guard state %s: %s",
+                      state_file, g_strerror(errno));
+        } else {
+            g_printerr("[NiOn] New Identity: rotated Tor guard state for fresh circuits.\n");
+        }
+        g_free(target);
+    }
+    g_free(state_file);
+
+    /* A hard-killed Tor can leave a stale lock; it must not block the restart. */
+    gchar *lock_file = g_build_filename(app->tor_dir, "lock", NULL);
+    if (g_file_test(lock_file, G_FILE_TEST_EXISTS))
+        g_unlink(lock_file);
+    g_free(lock_file);
+}
+
+/* ---- New Identity data purge (async, gated before the Tor restart) ---- */
+
+typedef struct {
+    NionApp *owner;           /* the normal window that owns the circuit */
+    GPtrArray *managers;      /* g_object_ref'd WebKitWebsiteDataManager* */
+    guint pending;            /* clears still in flight */
+    gboolean saw_error;
+} NionIdentityPurge;
+
+static void nion_finish_new_identity(NionApp *app);
+
+static void on_identity_purge_data_cleared(GObject *source, GAsyncResult *result,
+                                           gpointer user_data)
+{
+    NionIdentityPurge *purge = user_data;
+    NionApp *app = purge->owner;
+    GError *error = NULL;
+
+    gboolean ok = webkit_website_data_manager_clear_finish(
+        WEBKIT_WEBSITE_DATA_MANAGER(source), result, &error);
+    if (!ok) {
+        purge->saw_error = TRUE;
+        g_warning("New Identity: website-data clear failed: %s",
+                  error ? error->message : "unknown error");
+        g_clear_error(&error);
+    }
+
+    if (--purge->pending > 0)
+        return;
+
+    /* All clears finished: release our refs, then resume the rotation. */
+    gboolean had_error = purge->saw_error;
+    for (guint i = 0; i < purge->managers->len; i++)
+        g_object_unref(g_ptr_array_index(purge->managers, i));
+    g_ptr_array_free(purge->managers, TRUE);
+    g_free(purge);
+
+    if (!app || app->shutting_down)
+        return;
+
+    nion_set_status(app, had_error
+        ? "○ NEW IDENTITY — data purge incomplete; restarting Tor…"
+        : "○ NEW IDENTITY — old identity data cleared; restarting Tor…");
+    nion_finish_new_identity(app);
+}
+
+static void nion_start_identity_data_purge(NionApp *app)
+{
+    NionIdentityPurge *purge = g_new0(NionIdentityPurge, 1);
+    purge->owner = app;
+    purge->managers = g_ptr_array_new();
+
+    /* Normal (persistent) session — the primary target. */
+    if (app->network_session) {
+        WebKitWebsiteDataManager *mgr =
+            webkit_network_session_get_website_data_manager(app->network_session);
+        if (mgr)
+            g_ptr_array_add(purge->managers, g_object_ref(mgr));
+    }
+
+    /* Every open Private Window uses its own ephemeral session built over
+     * the same (now rotating) circuit; clear those too so no old-identity
+     * site state survives anywhere. Managers are ref'd so a window closing
+     * mid-purge cannot invalidate the async clear. */
+    if (app->private_windows) {
+        for (guint i = 0; i < app->private_windows->len; i++) {
+            NionApp *priv = g_ptr_array_index(app->private_windows, i);
+            if (!priv || !priv->network_session)
+                continue;
+            WebKitWebsiteDataManager *mgr =
+                webkit_network_session_get_website_data_manager(priv->network_session);
+            if (mgr)
+                g_ptr_array_add(purge->managers, g_object_ref(mgr));
+        }
+    }
+
+    if (purge->managers->len == 0) {
+        g_ptr_array_free(purge->managers, TRUE);
+        g_free(purge);
+        nion_finish_new_identity(app);
+        return;
+    }
+
+    nion_set_status(app, "○ NEW IDENTITY — clearing old identity data…");
+
+    for (guint i = 0; i < purge->managers->len; i++) {
+        purge->pending++;
+        webkit_website_data_manager_clear(
+            g_ptr_array_index(purge->managers, i),
+            WEBKIT_WEBSITE_DATA_ALL,   /* cookies, storage, DOM cache, caches, … */
+            0,                         /* timespan 0 = everything */
+            NULL,
+            on_identity_purge_data_cleared,
+            purge);
+    }
+}
+
+void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    NionApp *app = user_data;
+    if (!app)
+        return;
+
+    /* Tor is owned by the normal window. Triggering from a Private Window
+     * rotates the owner's circuit; every Private Window follows through the
+     * existing tor-state sync in nion_set_tor_ready / _progress / _error. */
+    if (app->is_private)
+        app = app->owner;
+    if (!app || app->shutting_down)
+        return;
+    if (app->tor_switching_identity) {
+        nion_set_status(app, "○ NEW IDENTITY — circuit rotation already in progress…");
+        return;
+    }
+    app->tor_switching_identity = TRUE;
+
+    /* Fail closed for the whole rotation: stop in-flight loads/downloads and
+     * move every window to "connecting" (tor_ready = FALSE blocks new nav). */
+    nion_stop_all_web_activity(app);
+    nion_cancel_active_downloads(app);
+    nion_set_tor_progress(app, 0);
+    nion_set_status(app, "○ NEW IDENTITY — resetting Tor circuit…");
+
+    nion_stop_tor_gracefully(app);
+    nion_rotate_tor_guard_state(app);
+
+    /* Clean-slate local state: wipe per-site behavioral rules (zoom,
+     * JavaScript, content-blocking, autoplay) and temporary permission
+     * grants for the normal window AND every open Private Window, so no
+     * fingerprintable setting survives into the new identity. */
+    nion_wipe_all_site_rules(app);
+    nion_clear_all_temporary_permissions(app);
+    if (app->private_windows) {
+        for (guint i = 0; i < app->private_windows->len; i++) {
+            NionApp *priv = g_ptr_array_index(app->private_windows, i);
+            if (!priv)
+                continue;
+            nion_wipe_all_site_rules(priv);
+            nion_clear_all_temporary_permissions(priv);
+        }
+    }
+
+    /* Purge cookies / storage / caches for the old identity while Tor is
+     * down and navigation is blocked. The Tor restart is gated on the async
+     * purge completing, so the new circuit never sees stale site state. */
+    nion_start_identity_data_purge(app);
+    /* nion_finish_new_identity() resumes below when every clear finishes. */
+}
+
+static void nion_finish_new_identity(NionApp *app)
+{
+    if (!nion_choose_tor_port(app)) {
+        app->tor_switching_identity = FALSE;
+        return; /* error already surfaced via nion_set_tor_error */
+    }
+    nion_apply_network_proxy(app);
+    if (!nion_start_tor(app)) {
+        app->tor_switching_identity = FALSE;
+        return; /* error already surfaced via nion_set_tor_error */
+    }
+
+    /* The switching guard is released by nion_set_tor_ready(TRUE) once the
+     * new circuit finishes bootstrapping, or by nion_set_tor_error on failure. */
 }
 
 void action_exit(GSimpleAction *action, GVariant *parameter, gpointer user_data)

@@ -384,6 +384,13 @@ static gchar *nion_home_html(NionApp *app)
         detail = g_strdup("Browsing unlocks automatically when Tor reaches 100% bootstrap.");
     }
 
+    /* Privacy-dashboard tiles (v2.1). Discarded count is the Feature #1
+     * (tab discard) placeholder: 0 is correct until suspension lands. */
+    const gchar *security_label = nion_security_level_label(app->security_level);
+    guint active_tabs = (app && app->notebook)
+        ? gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) : 0;
+    const guint discarded_tabs = 0;
+
     gchar *html = g_strdup_printf(
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -408,19 +415,34 @@ static gchar *nion_home_html(NionApp *app)
         "code{overflow-wrap:anywhere;background:var(--soft);padding:.2rem .4rem;border-radius:5px;color:var(--fg)}"
         ".shortcuts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}"
         ".shortcut{border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--card);color:var(--muted);font-size:.86rem}"
+        ".dash{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}"
+        ".tile{border:1px solid var(--border);border-radius:10px;padding:12px 13px;background:var(--card);text-align:left}"
+        ".tile span{display:block;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;font-weight:700}"
+        ".tile b{font-size:1.02rem;color:var(--fg)}"
+        ".identity{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:12px;"
+        "border:1px solid var(--border);border-radius:10px;padding:13px;background:var(--card);"
+        "color:var(--fg);font-weight:800;text-decoration:none;font-size:.95rem;letter-spacing:.01em}"
+        ".identity:hover{border-color:var(--muted)}.identity .ic{font-size:1.2rem;line-height:0}"
         "kbd{font:inherit;font-weight:700;color:var(--fg)}footer{margin-top:18px;color:var(--muted);font-size:.78rem}"
-        "@media(max-width:560px){body{padding:16px}.brand{justify-content:flex-start}.shortcuts{grid-template-columns:1fr}.name h1{font-size:1.9rem}}"
+        "@media(max-width:560px){body{padding:16px}.brand{justify-content:flex-start}.shortcuts,.dash{grid-template-columns:1fr}.name h1{font-size:1.9rem}}"
         "</style></head><body><main>"
         "<div class='brand'><div class='mark'>N</div><div class='name'><h1>NiOn</h1>"
         "<p>Minimal Onion · browser over Tor</p></div></div>"
         "<section class='status %s'><div class='status-line'><span class='dot'>%s</span><span>%s</span></div>"
         "<p>%s</p></section>"
+        "<div class='dash'>"
+        "<div class='tile'><span>Security level</span><b>%s</b></div>"
+        "<div class='tile'><span>Tabs active</span><b>%u</b></div>"
+        "<div class='tile'><span>Discarded</span><b>%u</b></div>"
+        "</div>"
+        "<a class='identity' href='nion://new-identity/'><span class='ic'>↻</span>New Identity</a>"
         "<div class='shortcuts'><div class='shortcut'><kbd>Ctrl+L</kbd><br>Focus address</div>"
         "<div class='shortcut'><kbd>Ctrl+T</kbd><br>New tab</div>"
         "<div class='shortcut'><kbd>Ctrl+Tab</kbd><br>Next tab</div></div>"
         "<footer>NiOn %s · Open websites. Open onions. Everything through Tor.</footer>"
         "</main></body></html>",
-        state_class, state_glyph, state, detail, NION_VERSION);
+        state_class, state_glyph, state, detail, security_label,
+        active_tabs, discarded_tabs, NION_VERSION);
 
     g_free(state);
     g_free(detail);
@@ -2142,6 +2164,7 @@ void nion_build_ui(NionApp *app)
 
     GMenu *menu = g_menu_new();
     g_menu_append(menu, "New Private Window", "win.private-window");
+    g_menu_append(menu, "New Identity", "win.new-identity");
     g_menu_append(menu, "Find in Page", "win.find");
     g_menu_append(menu, "Reload Without Cache", "win.hard-reload");
     GMenu *zoom_menu = g_menu_new();

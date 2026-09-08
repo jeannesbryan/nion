@@ -1023,14 +1023,12 @@ static void nion_clear_data_request_free(NionClearDataRequest *request)
     g_free(request);
 }
 
-static void nion_clear_all_temporary_permissions(NionApp *app)
+/* Stop any live camera/mic capture across the window's tabs. The permission
+ * table itself is cleared through the public nion_clear_all_temporary_permissions()
+ * (permission.c); this additionally forces capture hardware off immediately. */
+static void nion_stop_capture_for_all_tabs(NionApp *app)
 {
-    if (!app)
-        return;
-    if (app->temporary_permissions)
-        g_hash_table_remove_all(app->temporary_permissions);
-
-    if (!app->notebook)
+    if (!app || !app->notebook)
         return;
     GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
     gint pages = gtk_notebook_get_n_pages(notebook);
@@ -1098,8 +1096,10 @@ static void nion_clear_selected_local_data(NionClearDataRequest *request)
             g_unlink(app->autoplay_file);
     }
 
-    if (request->clear_permissions)
+    if (request->clear_permissions) {
         nion_clear_all_temporary_permissions(app);
+        nion_stop_capture_for_all_tabs(app);
+    }
 
     nion_update_site_info(app);
 }

@@ -30,4 +30,9 @@ void nion_load_autoplay(NionApp *app);
 WebKitWebsitePolicies *nion_website_policies_for_uri(NionApp *app, const gchar *uri);
 void nion_policy_decision_use_for_uri(NionTab *tab, WebKitPolicyDecision *decision, const gchar *uri);
 
+/* New Identity clean slate (v2.1): wipe every per-site behavioral rule
+ * (zoom, JavaScript, content-blocking, autoplay) for one window. Persistent
+ * profiles also drop their on-disk rule files. */
+void nion_wipe_all_site_rules(NionApp *app);
+
 #endif /* NION_PER_SITE_H */

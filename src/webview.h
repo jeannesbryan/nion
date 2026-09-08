@@ -36,6 +36,9 @@ typedef struct {
     void (*show_http_warning)(NionTab *tab, const gchar *uri);
     void (*show_external_protocol_prompt)(NionTab *tab, const gchar *uri,
                                            const gchar *scheme);
+    /* v2.1: the internal Start Page's "New Identity" button routes here
+     * (nion://new-identity), activating the window action. */
+    void (*request_new_identity)(NionApp *app);
 } NionWebviewCallbacks;
 
 void nion_webview_set_callbacks(const NionWebviewCallbacks *callbacks);
