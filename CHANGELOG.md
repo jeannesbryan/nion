@@ -16,6 +16,16 @@
 - Centralized static test greps on `src/*` (recursive over `.c`/`.h`) so the suite stays meaningful after extraction; every code-location guardrail is green.
 - Retired the "god file"; see `docs/split-main-c-plan.md` for the full module map and extraction record.
 
+# 1.8.0 — Stable
+
+This release focuses on vital memory safety improvements, stability fixes, and Tor process lifecycle enhancements.
+
+## Bug Fixes & Improvements
+* **WebKit Context Memory Safety:** Fixed potential fatal crashes (Segmentation Faults) and internal WebKit status corruption by removing manual destruction on the default WebKit context during application teardown.
+* **Compilation Error Fix:** Resolved build errors (`expected 'gpointer' but argument is of type 'int'`) caused by type mismatches inside `g_clear_object` macros.
+* **Tor Process Lifecycle:** Refactored background Tor process cleanup to ensure `SIGTERM` signals are properly delivered and memory objects are safely unreferenced, preventing GLib dangling pointers.
+* **Code Refactoring:** Streamlined `nion_free_private_app_idle` cleanup routines to strictly adhere to GObject memory management best practices.
+
 ## 1.7.0 — Stable
 
 - Finalized **Security Levels & Escape Guards** after the Stage 1/2 runtime validation cycle.
