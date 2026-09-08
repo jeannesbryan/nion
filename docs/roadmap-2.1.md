@@ -49,9 +49,13 @@ Ctrl+Tab into it) recreates the WebView through the existing
 processes instead of 20. This is the single largest RAM lever available.
 
 **Honest caveat (v1 scope).** WebKitGTK does not expose Chrome-style
-"freeze"; discard is destroy-and-recreate, so the page is reloaded and scroll
-position is lost unless we snapshot it first (a tiny JS `scrollY` read before
-teardown is a possible v1.1 refinement — not a v1 promise).
+"freeze"; discard is destroy-and-recreate. Spike finding (2.52.6): session
+state via `webkit_web_view_get_session_state()` +
+`webkit_web_view_session_state_serialize()` (then `restore_session_state()` on
+the recreated view) preserves the **URL and back/forward history** but **not
+scroll position** or in-page form state. So v1 discard restores history, yet
+the page reloads at the top; a tiny JS `scrollY` snapshot before teardown is a
+possible v1.1 refinement — not a v1 promise.
 
 **Effort.** Medium (~1 focused module + hub touch + pref wiring). No new deps.
 
@@ -107,23 +111,43 @@ static HTML generator change, not a new subsystem. Zero new runtime state.
 
 ## Secondary / fast-follow candidates
 
-### 4. "Low Memory" mode (process & compositing tuning)
+### 4. "Low Memory" mode (native memory-pressure tuning)
 
-**Idea.** A preference that:
-- forces a **shared secondary-process** model (single WebKit child across
-  tabs — large saving when many tabs are open, at the cost of crash isolation);
+**Spike finding (revises earlier draft).** The old WebKitGTK knob to force a
+**shared secondary-process** model (`webkit_web_context_set_process_model`) is
+**removed in WebKitGTK 2.52** — no `process_model` API remains in the public
+headers. Instead, 2.52 ships a first-class native pressure API:
+
+```c
+WebKitMemoryPressureSettings *mp = webkit_memory_pressure_settings_new();
+webkit_memory_pressure_settings_set_memory_limit(mp, 1024);      /* MB budget */
+webkit_memory_pressure_settings_set_conservative_threshold(mp, 0.35);
+webkit_memory_pressure_settings_set_strict_threshold(mp, 0.65);
+webkit_memory_pressure_settings_set_kill_threshold(mp, 0.95);
+webkit_memory_pressure_settings_set_poll_interval(mp, 2.0);       /* seconds */
+webkit_network_session_set_memory_pressure_settings(session, mp);
+webkit_memory_pressure_settings_free(mp);   /* session keeps its own ref */
+```
+
+Verified present on **both** persistent and ephemeral `WebKitNetworkSession`
+(WebKitNetworkSession.h:91), and linkable/runable at 2.52.6 (spike probe rc=0).
+
+**Idea.** A "Low Memory" preference that:
+- attaches `WebKitMemoryPressureSettings` (a 4 GB-tuned budget +
+  conservative/strict/kill thresholds + poll interval) to each network session
+  right where NiOn builds them (`network.c:83-85` — normal + private in one
+  seam), so WebKit itself sheds caches/processes as pressure crosses thresholds;
 - disables the GPU/compositing path (`WEBKIT_DISABLE_COMPOSITING_MODE`) on the
-  lightweight X11 desktop NiOn targets;
-- lowers the WebKit cache budget set in `nion_prepare_network` (`network.c`).
+  lightweight X11 desktop NiOn targets (env-level, verify at implementation);
+- keeps the WebKit cache pinned to `WEBKIT_CACHE_MODEL_DOCUMENT_VIEWER`
+  (already set globally in `app.c:649`).
 
 **Why it fits.** Configuration, not new subsystems — directly answers "don't
-bloat memory." Should be verified against WebKitGTK 2.52 APIs first (see the
-spike below) because some knobs are per-`WebKitWebContext` vs per-settings and
-behavior has shifted across versions.
+bloat memory," and lets WebKit make eviction decisions against a budget NiOn
+chooses. This is a *better* low-memory story than the removed process knob.
 
-**Effort.** Small after an API spike. Risk: low, but isolation trade-off must be
-documented (shared child = one crash takes more than one tab; the existing
-per-tab recovery UI mitigates this).
+**Effort.** Small. No crash-isolation trade-off to document (shared-process
+knob no longer exists); per-tab recovery UI unchanged.
 
 ### 5. Strict HTTPS + Onion-Location polish (hardening)
 
@@ -145,7 +169,7 @@ deepens the "everything through Tor" promise.
 
 | Step | Scope | Headline |
 |---|---|---|
-| 2.1.0-a | **Spike** (branch `spike/v2.1-memory-apis`) | Verify WebKitGTK 2.52 process-model / discard-feasibility APIs against installed headers; confirm compositing knob |
+| 2.1.0-a | **Spike** (branch `spike/v2.1-memory-apis`) ✅ done | Verified in `docs/spike-v2.1-memory-apis.md` — discard = destroy+recreate (session-state keeps URL/history, not scroll); `set_process_model` removed, native `WebKitMemoryPressureSettings` is the #4 approach |
 | 2.1.0-1 | Feature #2 (New Identity) | small–medium, privacy story, reuses tor-core seams |
 | 2.1.0-2 | Feature #1 (Tab Discard) | medium, memory story — the v2.1 centerpiece |
 | 2.1.0-3 | Feature #3 (Privacy Dashboard) | small, makes #1/#2 discoverable |
