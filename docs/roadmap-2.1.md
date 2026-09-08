@@ -194,10 +194,11 @@ deepens the "everything through Tor" promise.
 | Step | Scope | Headline |
 |---|---|---|
 | 2.1.0-a | **Spike** (branch `spike/v2.1-memory-apis`) ✅ done | Verified in `docs/spike-v2.1-memory-apis.md` — discard = destroy+recreate (session-state keeps URL/history, not scroll); `set_process_model` removed, native `WebKitMemoryPressureSettings` is the #4 approach |
-| 2.1.0-1 | Feature #2 (New Identity) | small–medium, privacy story, reuses tor-core seams |
-| 2.1.0-2 | Feature #1 (Tab Discard) | medium, memory story — the v2.1 centerpiece |
-| 2.1.0-3 | Feature #3 (Privacy Dashboard) | small, makes #1/#2 discoverable |
-| 2.1.0-4 | Fast-follows #4 / #5 | small, hardening + tuning |
+| 2.1.0-1 | Feature #2 (New Identity) ✅ done | merged to `main` via `feature/v2.1-new-identity` (`17f3c37`, `11eb2a3`, `591a8af`) |
+| 2.1.0-2 | Feature #1 (Tab Discard) ✅ done | `bf97e1c` — soft-unload discard + 💤 + sweep + dashboard count |
+| 2.1.0-3 | Feature #3 (Privacy Dashboard) ✅ done | merged in `feature/v2.1-new-identity` (`0cc89d2`) |
+| 2.1.0-4 | Feature #4 (Memory pressure) ✅ done | `f224e84` — always-on WebKitMemoryPressureSettings, no toggle |
+| 2.1.0-5 | Feature #5 (HTTPS-only / Onion-Location) | **open** — next fast-follow candidate |
 
 ## Definition of done for v2.1.0
 
