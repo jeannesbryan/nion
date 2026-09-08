@@ -89,13 +89,18 @@ release/        版本清单(NION_VERSION 等)
 docs/           拆分 plan 等技术文档
 ```
 
-## 7. 当前进行中
+## 7. 当前状态:模块化已完成(NiOn 2.0.0)
 
-**`main.c` 上帝文件拆分**(分支 `refactor/split-main-c`)。
+**`main.c` 上帝文件拆分已完成**(主线,非分支)。
 
-- 现状: `src/main.c` 9114 行,占 `src/` 约 86%,约 104 个去重顶层函数。
-- 目标: 按职责边界拆成独立模块,详见 `docs/split-main-c-plan.md` 和 `docs/main-c-function-inventory.md`。
-- 原则: 沿用作者已拆出 `navigation.c`/`permission.c` 等模块的清晰边界纪律,守住 §2 安全铁律。
+- 结果: `src/main.c` 从 ~10.8k 行降至 **~600 行**协调核心(入口、`on_activate`
+  回调注册、GAction 表、webview 创建中枢、安全胶水)。
+- 模块地图与函数映射: `docs/split-main-c-plan.md` 与 `docs/main-c-function-inventory.md`。
+- 纪律(§5)仍然有效: 任何未来新增模块都必须在 `meson.build` 的
+  `executable()` 源列表登记、只移动不改语义、独立 commit、依赖单向。
+- UI 解耦模式: 跨模块 UI 触点一律走 `main.c` 注册的 callback struct
+  (`NionTorCallbacks` / `NionUiCallbacks` / `NionAppLifecycleCallbacks` 等),
+  下游模块不得 `#include` main.c。
 
 ---
 *本文件由 IDES agent (rush·暗河) 为 NiOn fork 协作而建,遵循项目本体纪律。*

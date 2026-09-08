@@ -2,14 +2,14 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-fail(){ echo "1.7.0 SECURITY LEVELS STAGE 1: FAIL: $*" >&2; exit 1; }
+fail(){ echo "2.0.0 SECURITY LEVELS STAGE 1: FAIL: $*" >&2; exit 1; }
 SRC=src
 
-[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "1.7.0" ]] || fail 'manifest version is not 1.7.0'
+[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "2.0.0" ]] || fail 'manifest version is not 2.0.0'
 release_type="$(tr -d '\r\n' < release/manifest/APPSTREAM_RELEASE_TYPE)"
 release_status="$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)"
 [[ "$release_type" == "development" || "$release_type" == "stable" ]] || fail 'invalid AppStream release type'
-[[ "$release_status" == 'Stable' || "$release_status" == Security\ Levels\ \&\ Escape\ Guards\ development* ]] || fail '1.7.0 release status missing'
+[[ "$release_status" == 'Stable' || "$release_status" == Security\ Levels\ \&\ Escape\ Guards\ development* ]] || fail '2.0.0 release status missing'
 
 grep -rFq 'NION_SECURITY_STANDARD' "$SRC" || fail 'Standard level missing'
 grep -rFq 'NION_SECURITY_SAFER' "$SRC" || fail 'Safer level missing'
@@ -37,8 +37,8 @@ grep -rFq 'g_hash_table_remove_all(app->temporary_permissions)' "$SRC" || fail '
 grep -rFq 'webkit_web_view_set_camera_capture_state' "$SRC" || fail 'level change does not stop camera capture'
 grep -rFq 'webkit_web_view_set_microphone_capture_state' "$SRC" || fail 'level change does not stop microphone capture'
 
-grep -Eq '\\*\\*(Current development|Stable release): 1\.7\.0' README.md || fail 'README 1.7.0 marker missing'
+grep -Eq '\\*\\*(Current development|Stable release): 2\.0\.0' README.md || fail 'README 2.0.0 marker missing'
 grep -Fq '### Security Levels' README.md || fail 'README Security Levels section missing'
 grep -Fq 'Stage 2 — Escape Guards' README.md || fail 'README Stage 2 handoff missing'
 
-printf 'NION 1.7.0 SECURITY LEVELS STAGE 1: PASS\n'
+printf 'NION 2.0.0 SECURITY LEVELS STAGE 1: PASS\n'

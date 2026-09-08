@@ -7,6 +7,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 expected=(
+  AGENTS.md
   BUILDING.md
   CHANGELOG.md
   PRIVACY.md

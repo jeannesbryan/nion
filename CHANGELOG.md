@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.0.0 — Stable
+
+### Modular architecture
+
+- Completed the decomposition of the former single-file `src/main.c` (~10.8k lines, ~86% of `src/`) into focused modules, each with a matching `.h` interface and a one-directional dependency policy.
+- `src/types.h` — shared types/constants; `src/util.c` — pure helpers; `src/navigation.c` — URI/protocol predicates.
+- `src/per-site.c`, `src/permission.c`, `src/privacy.c`, `src/content-filter.c` — leaf site/permission/privacy/content-filter state.
+- `src/tor-core.c`, `src/network.c` — bundled-Tor subprocess lifecycle, dead-SOCKS fail-closed routing, and download wiring; decoupled from the UI through a `NionTorCallbacks` status/error/progress surface.
+- `src/session.c`, `src/tabs.c`, `src/webview.c`, `src/bookmarks.c`, `src/downloads.c`, `src/settings.c`, `src/site-data.c` — session/tabs/webview/bookmarks/downloads/preferences/site-data feature domains.
+- `src/app.c` — application lifecycle (dirs, sandbox, Tor-state coordination, close/shutdown, private windows); UI touchpoints injected via `NionAppLifecycleCallbacks`.
+- `src/ui.c` — core chrome (toolbar/window builder, remaining actions, dialogs, find/zoom/print, status/title/progress/control synchronizers); main.c tab/status/action-table implementations injected via `NionUiCallbacks`.
+- `src/main.c` is now the coordinator core (~600 lines): entry point, `on_activate` callback registration, GAction table, webview-creation hub, and security glue (content filter / onion-location / fail-closed policy).
+- Kept the security invariants intact through the refactor: fail-closed Tor routing, Private Window isolation, all-permissions-denied baseline, URI protocol boundary, and local-network lock-down are unchanged and still covered by the static/runtime suites.
+- Centralized static test greps on `src/*` (recursive over `.c`/`.h`) so the suite stays meaningful after extraction; every code-location guardrail is green.
+- Retired the "god file"; see `docs/split-main-c-plan.md` for the full module map and extraction record.
+
 ## 1.7.0 — Stable
 
 - Finalized **Security Levels & Escape Guards** after the Stage 1/2 runtime validation cycle.

@@ -1,8 +1,8 @@
 # NiOn Testing
 
-## NiOn 1.7.0 final release validation
+## NiOn 2.0.0 final release validation
 
-Before publishing `v1.7.0`, run the full static preflight and then validate the final native/AppImage build on the stable release toolchain when practical (GTK 4.22.4, WebKitGTK 2.52.5, GLib 2.88.2). A newer stable patch release is acceptable; GTK 4.23.x and GLib 2.89.x are development branches and should be treated as compatibility-testing environments rather than the preferred release baseline.
+Before publishing `v2.0.0`, run the full static preflight and then validate the final native/AppImage build on the stable release toolchain when practical (GTK 4.22.4, WebKitGTK 2.52.5, GLib 2.88.2). A newer stable patch release is acceptable; GTK 4.23.x and GLib 2.89.x are development branches and should be treated as compatibility-testing environments rather than the preferred release baseline.
 
 Final live smoke test:
 
@@ -23,7 +23,7 @@ Static final guard:
 ./scripts/release-preflight.sh
 ```
 
-## NiOn 1.7.0 Stage 2 — Escape Guards
+## NiOn 2.0.0 Stage 2 — Escape Guards
 
 Before moving to Stage 3, validate both escape boundaries on normal and Private windows:
 
@@ -43,7 +43,7 @@ Static guard:
 ./scripts/test-escape-guards-stage2.sh
 ```
 
-## NiOn 1.7.0 Stage 1 — Security Levels
+## NiOn 2.0.0 Stage 1 — Security Levels
 
 Stage 1 baseline validation for all three levels on normal and Private windows:
 
@@ -339,21 +339,21 @@ Build first:
 Then:
 
 ```bash
-./scripts/test-appimage.sh dist/NiOn-1.7.0-x86_64.AppImage
+./scripts/test-appimage.sh dist/NiOn-2.0.0-x86_64.AppImage
 cd dist
-sha256sum -c NiOn-1.7.0-x86_64.AppImage.sha256
+sha256sum -c NiOn-2.0.0-x86_64.AppImage.sha256
 ```
 
 Run the artifact:
 
 ```bash
-./NiOn-1.7.0-x86_64.AppImage
+./NiOn-2.0.0-x86_64.AppImage
 ```
 
 or without FUSE:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-1.7.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-2.0.0-x86_64.AppImage
 ```
 
 Repeat the critical smoke tests against the AppImage itself: Tor bootstrap, clearnet, `.onion`, target-blank/new-tab, context menu, persistent normal session, Private Window ephemerality, and normal/private downloads.
