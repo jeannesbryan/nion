@@ -19,6 +19,8 @@
 #define NION_TOR_GRACEFUL_SHUTDOWN_MS 3000
 #define NION_ONION_RETRY_DELAY_MS 350
 #define NION_SESSION_SAVE_DELAY_MS 750
+#define NION_TAB_DISCARD_AFTER_MS  300000   /* 5 min idle in background */
+#define NION_TAB_DISCARD_POLL_MS    15000   /* sweep interval */
 #define NION_SESSION_FORMAT 1
 #define NION_MAX_SESSION_TABS 256
 #define NION_MAX_SESSION_TABS_INPUT 1024
@@ -125,6 +127,18 @@ struct _NionTab {
      * recreate the navigation through the same Tor-gated WebView. */
     gboolean web_process_terminated;
     gchar *web_process_uri;
+
+    /* Background Tab Discard (v2.1 #1). When a background tab has been idle
+     * for NION_TAB_DISCARD_AFTER_MS the tab's WebKitWebView is destroyed to
+     * release its page from the shared web process; the lightweight shell
+     * (URI/title/pinned/mute/history slot) survives as a suspended tab that
+     * is re-materialized on demand through the main.c webview builder. */
+    gboolean discarded;
+    gchar *discard_uri;
+    gchar *discard_title;
+    gboolean discard_muted;
+    GtkWidget *suspend_indicator;   /* "💤" chip in the tab strip */
+    gint64 last_active_msec;        /* monotonic ms of last user/load activity */
 };
 
 struct _NionBookmark {
@@ -267,6 +281,7 @@ struct _NionApp {
     gboolean crash_recovery_decision_pending;
     GtkWidget *crash_recovery_window;
     guint session_save_source_id;
+    guint discard_sweep_source_id;
     gboolean normalizing_tab_order;
 
     gchar *data_dir;

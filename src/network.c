@@ -1,7 +1,7 @@
 /* Copyright (C) 2026 Jeannes Bryan */
 
-/* Network: WebKitNetworkSession, proxy config, cookie store validation
- * (extracted from src/main.c, Phase 3, NiOn 2.0.0). */
+/* Network: WebKitNetworkSession, proxy config, cookie store validation,
+ * memory-pressure tuning (extracted from src/main.c, Phase 3, NiOn 2.0.0). */
 
 #include "network.h"
 #include "types.h"
@@ -66,10 +66,53 @@ void nion_apply_network_proxy(NionApp *app)
     webkit_network_proxy_settings_free(proxy);
 }
 
+/* ---- Memory-pressure tuning (v2.1 #4) ---- */
+
+/* WebKit's periodic memory check is disabled unless custom settings are set,
+ * and the settings must be installed before any WebKitNetworkSession exists.
+ * NiOn tunes for its 4 GB physical-memory target: cap WebKit's working set,
+ * start releasing non-critical memory early, and poll frequently so that
+ * memory freed by a discarded tab (feature #1) is actually returned to the OS
+ * within a couple of seconds instead of after WebKit's default 30 s poll.
+ *
+ * The memory_limit is capped well below the machine's RAM so the browser as a
+ * whole (WebKit + Tor + GTK) stays comfortable inside the 4 GB ceiling. */
+static void nion_apply_memory_pressure_settings(void)
+{
+    static gboolean applied = FALSE;
+    if (applied)
+        return;
+    applied = TRUE;
+
+    WebKitMemoryPressureSettings *mp = webkit_memory_pressure_settings_new();
+    /* Cap the WebKit process working set at ~1.5 GB (leaves headroom for Tor
+     * + the UI inside the 4 GB physical budget). */
+    webkit_memory_pressure_settings_set_memory_limit(mp, 1536);
+    /* Release non-critical memory (caches, buffers) from ~33% of the cap. */
+    webkit_memory_pressure_settings_set_conservative_threshold(mp, 0.33);
+    /* Release critical memory from ~50% of the cap. */
+    webkit_memory_pressure_settings_set_strict_threshold(mp, 0.50);
+    /* Never let WebKit hard-kill a web process on memory pressure alone: with
+     * tabs sharing a WebProcess, a kill would take sibling tabs down. The
+     * discard sweep + these thresholds bound memory without that. */
+    webkit_memory_pressure_settings_set_kill_threshold(mp, 0.0);
+    /* Poll every 2 s so freed memory is handed back quickly after a discard. */
+    webkit_memory_pressure_settings_set_poll_interval(mp, 2.0);
+
+    /* Caller-owned: WebKit keeps its own copy; we can free ours. */
+    webkit_network_session_set_memory_pressure_settings(mp);
+    webkit_memory_pressure_settings_free(mp);
+
+    g_printerr("[NiOn] Memory pressure tuning active: 1.5 GB cap, 2 s poll.\n");
+}
+
 gboolean nion_prepare_network(NionApp *app)
 {
     if (!app)
         return FALSE;
+
+    /* Must run before the first WebKitNetworkSession is created. */
+    nion_apply_memory_pressure_settings();
 
     if (app->network_session) {
         if (app->is_private && !webkit_network_session_is_ephemeral(app->network_session)) {

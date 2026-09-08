@@ -14,6 +14,7 @@
 #include "per-site.h"
 #include "content-filter.h"
 #include "session.h"
+#include "tabs.h"
 #include "util.h"
 #include <gtk/gtk.h>
 #include <webkit/webkit.h>
@@ -426,6 +427,7 @@ void on_webview_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, gpo
     case WEBKIT_LOAD_COMMITTED: {
         tab->onion_cancel_retries = 0;
         tab->connection_committed = TRUE;
+        nion_tab_touch(tab);
         const gchar *committed_uri = webkit_web_view_get_uri(web_view);
         if (!nion_uri_is_http_clearnet(committed_uri))
             g_clear_pointer(&tab->http_allowed_origin, g_free);
