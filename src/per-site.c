@@ -693,3 +693,40 @@ void nion_policy_decision_use_for_uri(NionTab *tab, WebKitPolicyDecision *decisi
     webkit_policy_decision_use_with_policies(decision, policies);
     g_object_unref(policies);
 }
+
+void nion_wipe_all_site_rules(NionApp *app)
+{
+    /* New Identity clean slate (v2.1): clear every per-site behavioral rule
+     * for this window so no zoom level, JavaScript toggle, content-blocking
+     * exception or autoplay allowance survives into the new identity.
+     * Persistent profiles drop their on-disk rule files too; Private Windows
+     * (memory-only rules) simply empty their tables. */
+    if (!app)
+        return;
+
+    if (app->site_zoom) {
+        g_hash_table_remove_all(app->site_zoom);
+        if (!app->is_private && app->site_zoom_file)
+            g_unlink(app->site_zoom_file);
+    }
+
+    if (app->site_javascript_disabled) {
+        g_hash_table_remove_all(app->site_javascript_disabled);
+        if (!app->is_private && app->site_javascript_file)
+            g_unlink(app->site_javascript_file);
+    }
+    if (app->site_javascript_enabled)
+        g_hash_table_remove_all(app->site_javascript_enabled);
+
+    if (app->content_blocking_disabled) {
+        g_hash_table_remove_all(app->content_blocking_disabled);
+        if (!app->is_private && app->content_blocking_file)
+            g_unlink(app->content_blocking_file);
+    }
+
+    if (app->autoplay_allowed_sites) {
+        g_hash_table_remove_all(app->autoplay_allowed_sites);
+        if (!app->is_private && app->autoplay_file)
+            g_unlink(app->autoplay_file);
+    }
+}

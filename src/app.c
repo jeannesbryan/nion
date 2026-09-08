@@ -10,6 +10,7 @@
 #include "types.h"
 #include "network.h"
 #include "per-site.h"
+#include "permission.h"
 #include "session.h"
 #include "downloads.h"
 #include "bookmarks.h"
@@ -322,6 +323,22 @@ void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer us
 
     nion_stop_tor_gracefully(app);
     nion_rotate_tor_guard_state(app);
+
+    /* Clean-slate local state: wipe per-site behavioral rules (zoom,
+     * JavaScript, content-blocking, autoplay) and temporary permission
+     * grants for the normal window AND every open Private Window, so no
+     * fingerprintable setting survives into the new identity. */
+    nion_wipe_all_site_rules(app);
+    nion_clear_all_temporary_permissions(app);
+    if (app->private_windows) {
+        for (guint i = 0; i < app->private_windows->len; i++) {
+            NionApp *priv = g_ptr_array_index(app->private_windows, i);
+            if (!priv)
+                continue;
+            nion_wipe_all_site_rules(priv);
+            nion_clear_all_temporary_permissions(priv);
+        }
+    }
 
     /* Purge cookies / storage / caches for the old identity while Tor is
      * down and navigation is blocked. The Tor restart is gated on the async

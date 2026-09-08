@@ -93,3 +93,13 @@ void nion_clear_temporary_permissions_for_origin(NionApp *app,
         }
     }
 }
+
+void nion_clear_all_temporary_permissions(NionApp *app)
+{
+    /* New Identity clean slate (v2.1): revoke every temporary permission
+     * grant so no old-identity camera/mic/location/notification allowance
+     * survives into the new circuit. */
+    if (!app || !app->temporary_permissions)
+        return;
+    g_hash_table_remove_all(app->temporary_permissions);
+}
