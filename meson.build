@@ -71,6 +71,7 @@ executable(
   'src/bookmarks.c',
   'src/downloads.c',
   'src/settings.c',
+  'src/site-data.c',
   nion_resources,
   include_directories: include_directories('.'),
   dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
