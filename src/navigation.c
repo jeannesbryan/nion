@@ -254,6 +254,47 @@ gboolean nion_uri_is_https_clearnet(const gchar *uri)
     return ok;
 }
 
+/* HTTPS-only upgrade (v2.1 #5): return the https:// twin of a clearnet
+ * http:// URI (scheme swapped, default port normalised), or NULL when the
+ * URI is not a plain-clearnet-http URL that can be upgraded. .onion services
+ * (plain http by design, but end-to-end inside Tor) are never upgraded. */
+gchar *nion_https_upgrade_uri(const gchar *uri)
+{
+    if (!uri || !*uri || !nion_uri_is_http_clearnet(uri))
+        return NULL;
+
+    GError *error = NULL;
+    GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_PARSE_RELAXED, &error);
+    if (!parsed) {
+        g_clear_error(&error);
+        return NULL;
+    }
+
+    const gchar *host = g_uri_get_host(parsed);
+    const gchar *path = g_uri_get_path(parsed);
+    const gchar *query = g_uri_get_query(parsed);
+    const gchar *fragment = g_uri_get_fragment(parsed);
+    gint port = g_uri_get_port(parsed);
+
+    GString *upgraded = g_string_new("https://");
+    if (host && *host)
+        g_string_append(upgraded, host);
+    if (port >= 0 && port != 80 && port != 443)
+        g_string_append_printf(upgraded, ":%d", port);
+    g_string_append(upgraded, (path && *path) ? path : "/");
+    if (query && *query) {
+        g_string_append_c(upgraded, '?');
+        g_string_append(upgraded, query);
+    }
+    if (fragment && *fragment) {
+        g_string_append_c(upgraded, '#');
+        g_string_append(upgraded, fragment);
+    }
+
+    g_uri_unref(parsed);
+    return g_string_free(upgraded, FALSE);
+}
+
 gboolean nion_scheme_is_internal_only(const gchar *scheme)
 {
     if (!scheme || !*scheme)

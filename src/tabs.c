@@ -409,6 +409,7 @@ void nion_tab_free(gpointer data)
     g_clear_pointer(&tab->web_process_uri, g_free);
     g_clear_pointer(&tab->discard_uri, g_free);
     g_clear_pointer(&tab->discard_title, g_free);
+    g_clear_pointer(&tab->https_upgrade_from, g_free);
     g_free(tab);
 }
 

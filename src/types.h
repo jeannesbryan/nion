@@ -112,6 +112,14 @@ struct _NionTab {
     gchar *http_warning_uri;
     WebKitPolicyDecision *http_warning_decision;
     gchar *http_allowed_origin;
+    /* Strict HTTPS (v2.1 #5): while a clearnet http:// request is being
+     * auto-upgraded to its https:// twin, remember the original clearnet URI
+     * so that if the https attempt fails (site has no HTTPS) NiOn can refuse
+     * with the explicit plain-HTTP warning instead of silently falling back.
+     * https_upgrade_refused suppresses the second failure callback (TLS then
+     * load-failed) after the plain-HTTP warning is already shown. */
+    gchar *https_upgrade_from;
+    gboolean https_upgrade_refused;
 
     gboolean restore_pending;
     gchar *restore_uri;

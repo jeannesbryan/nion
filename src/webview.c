@@ -410,24 +410,40 @@ void on_webview_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, gpo
     NionApp *app = tab->app;
 
     switch (event) {
-    case WEBKIT_LOAD_STARTED:
+    case WEBKIT_LOAD_STARTED: {
         nion_set_onion_location(tab, NULL);
         tab->connection_committed = FALSE;
         tab->mixed_content_displayed = FALSE;
         tab->mixed_content_run = FALSE;
         tab->mixed_content_other = FALSE;
+        tab->https_upgrade_refused = FALSE;
+        /* If the user navigated somewhere that is neither the pending http
+         * origin nor its https twin, the strict-HTTPS upgrade is over. */
+        const gchar *started_uri = webkit_web_view_get_uri(web_view);
+        if (tab->https_upgrade_from && started_uri &&
+            g_strcmp0(started_uri, tab->https_upgrade_from) != 0) {
+            gchar *twin = nion_https_upgrade_uri(tab->https_upgrade_from);
+            gboolean is_twin = twin && g_strcmp0(started_uri, twin) == 0;
+            g_free(twin);
+            if (!is_twin)
+                g_clear_pointer(&tab->https_upgrade_from, g_free);
+        }
         if (!tab->home_page && !tab->error_page) {
             tab->load_failed = FALSE;
             if (nion_current_tab(app) == tab)
                 nion_set_status(app, "● TOR CONNECTED — loading 0%");
         }
         break;
+    }
     case WEBKIT_LOAD_REDIRECTED:
         break;
     case WEBKIT_LOAD_COMMITTED: {
         tab->onion_cancel_retries = 0;
         tab->connection_committed = TRUE;
         nion_tab_touch(tab);
+        /* A successful commit (https twin or anything else) ends any pending
+         * strict-HTTPS upgrade attempt. */
+        g_clear_pointer(&tab->https_upgrade_from, g_free);
         const gchar *committed_uri = webkit_web_view_get_uri(web_view);
         if (!nion_uri_is_http_clearnet(committed_uri))
             g_clear_pointer(&tab->http_allowed_origin, g_free);
@@ -463,6 +479,33 @@ gboolean on_webview_load_failed(WebKitWebView *web_view,
     (void)web_view;
     NionTab *tab = user_data;
     NionApp *app = tab->app;
+
+    /* A second failure callback for the same https upgrade (TLS then
+     * load-failed) must not stack a second refusal over the first. */
+    if (tab->https_upgrade_refused && failing_uri &&
+        nion_uri_is_https_clearnet(failing_uri)) {
+        tab->https_upgrade_refused = FALSE;
+        return TRUE;
+    }
+
+    /* Strict HTTPS (v2.1 #5): if an auto-upgraded https:// load fails (not a
+     * user-initiated cancellation), the site has no working HTTPS. Refuse the
+     * silent downgrade: clear the upgrade state and surface the explicit
+     * plain-HTTP warning so the user can choose (or decline) to continue over
+     * clearnet HTTP for this origin. Do not run this for http:// failing URIs
+     * (those come from the warning's Continue path, not from an upgrade). */
+    if (tab->https_upgrade_from && failing_uri &&
+        nion_uri_is_https_clearnet(failing_uri) &&
+        !g_error_matches(error, WEBKIT_NETWORK_ERROR, WEBKIT_NETWORK_ERROR_CANCELLED)) {
+        gchar *original = g_steal_pointer(&tab->https_upgrade_from);
+        g_clear_pointer(&tab->http_warning_uri, g_free);
+        g_clear_object(&tab->http_warning_decision);
+        tab->https_upgrade_refused = TRUE;
+        nion_show_http_warning(tab, original);
+        g_free(original);
+        nion_update_controls(app);
+        return TRUE;
+    }
 
     if (g_error_matches(error, WEBKIT_NETWORK_ERROR, WEBKIT_NETWORK_ERROR_CANCELLED)) {
         if (load_event == WEBKIT_LOAD_STARTED && app->tor_ready &&
@@ -544,6 +587,29 @@ gboolean on_webview_tls_failed(WebKitWebView *web_view,
     NionTab *tab = user_data;
     NionApp *app = tab->app;
     tab->load_failed = TRUE;
+
+    /* A second failure callback for the same https upgrade must not stack. */
+    if (tab->https_upgrade_refused && failing_uri &&
+        nion_uri_is_https_clearnet(failing_uri)) {
+        tab->https_upgrade_refused = FALSE;
+        return TRUE;
+    }
+
+    /* Strict HTTPS (v2.1 #5): an auto-upgraded https:// twin whose TLS
+     * certificate is invalid must not silently downgrade either. Treat it
+     * like the upgrade-failure path: clear the upgrade state and surface the
+     * explicit plain-HTTP warning so the user can decide. */
+    if (tab->https_upgrade_from && failing_uri &&
+        nion_uri_is_https_clearnet(failing_uri)) {
+        gchar *original = g_steal_pointer(&tab->https_upgrade_from);
+        g_clear_pointer(&tab->http_warning_uri, g_free);
+        g_clear_object(&tab->http_warning_decision);
+        tab->https_upgrade_refused = TRUE;
+        nion_show_http_warning(tab, original);
+        g_free(original);
+        nion_update_controls(app);
+        return TRUE;
+    }
 
     nion_show_error_page(tab,
                          "TLS error",
@@ -694,6 +760,23 @@ gboolean on_webview_decide_policy(WebKitWebView *web_view,
         g_free(origin);
 
         if (!already_allowed) {
+            /* Strict HTTPS (v2.1 #5): try the https:// twin first instead of
+             * loading plaintext clearnet HTTP. Only when the site genuinely
+             * has no HTTPS (the upgraded load fails below) does NiOn show the
+             * explicit plain-HTTP warning and let the user decide. */
+            gchar *https_twin = nion_https_upgrade_uri(uri);
+            if (https_twin && g_strcmp0(https_twin, uri) != 0 &&
+                !tab->https_upgrade_from) {
+                webkit_policy_decision_ignore(decision);
+                tab->https_upgrade_from = g_strdup(uri);
+                webkit_web_view_load_uri(tab->web_view, https_twin);
+                nion_set_status(app, "● TOR CONNECTED — UPGRADING TO HTTPS");
+                g_free(https_twin);
+                nion_update_controls(app);
+                return TRUE;
+            }
+            g_free(https_twin);
+
             if (tab->http_warning_decision) {
                 webkit_policy_decision_ignore(decision);
                 nion_update_controls(app);

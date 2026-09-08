@@ -913,15 +913,30 @@ static void on_http_warning_continue(GtkButton *button, gpointer user_data)
 {
     (void)button;
     NionTab *tab = user_data;
-    if (!tab || !tab->http_warning_decision || !tab->http_warning_uri)
+    if (!tab || !tab->http_warning_uri)
         return;
 
     gchar *origin = nion_http_origin_key(tab->http_warning_uri);
     g_free(tab->http_allowed_origin);
     tab->http_allowed_origin = origin;
 
-    nion_policy_decision_use_for_uri(tab, tab->http_warning_decision, tab->http_warning_uri);
-    g_clear_object(&tab->http_warning_decision);
+    if (tab->http_warning_decision) {
+        /* Classic path: the plain-HTTP navigation is still pending; resume it. */
+        nion_policy_decision_use_for_uri(tab, tab->http_warning_decision, tab->http_warning_uri);
+        g_clear_object(&tab->http_warning_decision);
+    } else {
+        /* Strict HTTPS refusal path: the auto-upgraded https:// attempt failed
+         * (site has no HTTPS). No navigation is pending, so reload the
+         * original clearnet URI now that the origin is explicitly allowed. */
+        gchar *uri = g_strdup(tab->http_warning_uri);
+        g_clear_pointer(&tab->http_warning_uri, g_free);
+        nion_close_http_warning(tab);
+        nion_load_uri(tab, uri);
+        g_free(uri);
+        if (tab->app && tab->app->tor_ready)
+            nion_set_status(tab->app, "● TOR CONNECTED — plain HTTP allowed for this site (no HTTPS available)");
+        return;
+    }
     g_clear_pointer(&tab->http_warning_uri, g_free);
     nion_close_http_warning(tab);
 
