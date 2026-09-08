@@ -22,7 +22,20 @@ Manifest baseline for this release cycle:
 
 ## Headline features (v2.1 core)
 
-### 1. Background Tab Discard (auto-suspend) — *the memory lever*
+### 1. Background Tab Discard (auto-suspend) — *the memory lever* — ✅ **DONE**
+
+> **Status: implemented & merged to `main`** on `feature/v2.1-tab-discard`
+> (commit `bf97e1c`). **Final shape** (revised by spike probes): WebKitGTK
+> shares one WebProcess across tabs here, so terminating a process would take
+> sibling tabs down, and in-place HTML unload alone does not return RSS.
+> v1 ships a **soft unload** — a background tab idle past
+> `NION_TAB_DISCARD_AFTER_MS` (5 min) is stopped and swapped to a tiny
+> internal "💤 Suspended" document (releasing its page from the web process),
+> keeping the `NionTab` shell + strip entry + real title alive; clicking the
+> tab revives it through the Tor-gated loader. The 💤 chip, live dashboard
+> "Discarded" count, per-15s sweep (`NION_TAB_DISCARD_POLL_MS`), session-save
+> of the real URI, and full activity-touch guards all shipped. Memory is then
+> actively shed by feature #4's pressure settings.
 
 **Problem.** WebKitGTK is the dominant memory consumer: every real tab holds a
 web process. On a 4 GB host, ~8–10 content-heavy tabs exhaust comfortable headroom
@@ -111,7 +124,18 @@ static HTML generator change, not a new subsystem. Zero new runtime state.
 
 ## Secondary / fast-follow candidates
 
-### 4. "Low Memory" mode (native memory-pressure tuning)
+### 4. "Low Memory" mode (native memory-pressure tuning) — ✅ **DONE**
+
+> **Status: implemented on `feature/v2.1-tab-discard` (commit `f224e84`).**
+> **Final decision: always-on, no Preferences toggle.** Minimalist call —
+> NiOn users get the optimized lightweight experience by default; a toggle
+> adds cognitive load for no benefit. `nion_prepare_network()` installs
+> `WebKitMemoryPressureSettings` **before** the first session (the once-guarded
+> seam through which every normal + private window builds its session):
+> 1.5 GB working-set cap, conservative 0.33 / strict 0.50 release thresholds,
+> **kill_threshold 0** (tabs share a WebProcess — never hard-kill), **2 s poll**
+> (vs WebKit's default 30 s) so memory freed by a discard returns to the OS
+> within seconds. Verified live: RSS drops promptly behind the 💤 indicator.
 
 **Spike finding (revises earlier draft).** The old WebKitGTK knob to force a
 **shared secondary-process** model (`webkit_web_context_set_process_model`) is
