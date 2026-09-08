@@ -48,6 +48,9 @@
 #define NION_MAX_AUTOPLAY_FILE_BYTES (1024 * 1024)
 #define NION_MAX_AUTOPLAY_EXCEPTIONS 2048
 #define NION_AUTOPLAY_FORMAT 1
+#define NION_MAX_PREFERRED_ONION_FILE_BYTES (1024 * 1024)
+#define NION_MAX_PREFERRED_ONION_ENTRIES 2048
+#define NION_PREFERRED_ONION_FORMAT 1
 #define NION_CONTENT_FILTER_ID "nion-lightweight-v1"
 #define NION_ZOOM_MIN_PERCENT 50
 #define NION_ZOOM_MAX_PERCENT 200
@@ -112,6 +115,14 @@ struct _NionTab {
     gchar *http_warning_uri;
     WebKitPolicyDecision *http_warning_decision;
     gchar *http_allowed_origin;
+    /* Strict HTTPS (v2.1 #5): while a clearnet http:// request is being
+     * auto-upgraded to its https:// twin, remember the original clearnet URI
+     * so that if the https attempt fails (site has no HTTPS) NiOn can refuse
+     * with the explicit plain-HTTP warning instead of silently falling back.
+     * https_upgrade_refused suppresses the second failure callback (TLS then
+     * load-failed) after the plain-HTTP warning is already shown. */
+    gchar *https_upgrade_from;
+    gboolean https_upgrade_refused;
 
     gboolean restore_pending;
     gchar *restore_uri;
@@ -298,6 +309,7 @@ struct _NionApp {
     gchar *site_javascript_file;
     gchar *content_blocking_file;
     gchar *autoplay_file;
+    gchar *preferred_onion_file;
     gchar *content_filter_store_dir;
     GPtrArray *bookmarks;
     GHashTable *site_zoom;
@@ -305,6 +317,7 @@ struct _NionApp {
     GHashTable *site_javascript_enabled;
     GHashTable *content_blocking_disabled;
     GHashTable *autoplay_allowed_sites;
+    GHashTable *preferred_onion;   /* site key -> .onion URI string */
     GHashTable *temporary_permissions;
     WebKitUserContentFilterStore *content_filter_store;
     WebKitUserContentFilter *content_filter;

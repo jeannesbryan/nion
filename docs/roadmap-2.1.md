@@ -173,7 +173,21 @@ chooses. This is a *better* low-memory story than the removed process knob.
 **Effort.** Small. No crash-isolation trade-off to document (shared-process
 knob no longer exists); per-tab recovery UI unchanged.
 
-### 5. Strict HTTPS + Onion-Location polish (hardening)
+### 5. Strict HTTPS + Onion-Location polish (hardening) — ✅ **DONE**
+
+> **Status: implemented on `feature/v2.1-https-onion` (commits `7d69f61` +
+> `0cd5346`).** **Final shape:**
+> - **Strict HTTPS (always-on, no toggle):** clearnet http:// navigation is
+>   auto-upgraded to its https:// twin before anything loads; only if the site
+>   genuinely has no HTTPS (load-failed) or a bad certificate (TLS-failed)
+>   does NiOn refuse the silent downgrade and surface the explicit plain-HTTP
+>   warning (per-tab temporary allowance as before). `.onion` is never
+>   upgraded (plain http by design, end-to-end inside Tor).
+> - **Onion-Location memory:** a freshly advertised Onion-Location is
+>   remembered per clearnet site (`preferred-onion.ini`, 0600, capped,
+>   quarantine-on-corruption); the onion button offers the direct jump on
+>   repeat visits even when the page stops advertising. Forget Site + New
+>   Identity clean-slate wipe the mapping.
 
 **Idea.** Two tight wins in `navigation.c`/`ui.c`/`per-site.c`:
 - an opt-in **HTTPS-only** enforcement that upgrades or refuses clearnet HTTP
@@ -198,7 +212,7 @@ deepens the "everything through Tor" promise.
 | 2.1.0-2 | Feature #1 (Tab Discard) ✅ done | `bf97e1c` — soft-unload discard + 💤 + sweep + dashboard count |
 | 2.1.0-3 | Feature #3 (Privacy Dashboard) ✅ done | merged in `feature/v2.1-new-identity` (`0cc89d2`) |
 | 2.1.0-4 | Feature #4 (Memory pressure) ✅ done | `f224e84` — always-on WebKitMemoryPressureSettings, no toggle |
-| 2.1.0-5 | Feature #5 (HTTPS-only / Onion-Location) | **open** — next fast-follow candidate |
+| 2.1.0-5 | Feature #5 (HTTPS-only / Onion-Location) ✅ done | `7d69f61` + `0cd5346` — auto-upgrade http→https, refuse downgrade; remembered preferred onion |
 
 ## Definition of done for v2.1.0
 

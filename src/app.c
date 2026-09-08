@@ -390,6 +390,7 @@ void nion_prepare_dirs(NionApp *app)
     app->site_javascript_file = g_build_filename(app->config_dir, "site-javascript.ini", NULL);
     app->content_blocking_file = g_build_filename(app->config_dir, "content-blocking.ini", NULL);
     app->autoplay_file = g_build_filename(app->config_dir, "autoplay.ini", NULL);
+    app->preferred_onion_file = g_build_filename(app->config_dir, "preferred-onion.ini", NULL);
     app->content_filter_store_dir = g_build_filename(app->cache_dir, "content-filters", NULL);
     app->tor_runtime_file = g_build_filename(app->data_dir, "tor-runtime.ini", NULL);
 
@@ -705,6 +706,7 @@ static void nion_open_private_window(NionApp *source)
     nion_load_site_javascript(app);
     nion_load_content_blocking(app);
     nion_load_autoplay(app);
+    nion_load_preferred_onion(app);
 
     nion_private_sync_from_owner(app, owner);
     if (!nion_prepare_network(app)) {
@@ -806,6 +808,7 @@ static void nion_cleanup(NionApp *app)
     g_clear_pointer(&app->site_javascript_file, g_free);
     g_clear_pointer(&app->content_blocking_file, g_free);
     g_clear_pointer(&app->autoplay_file, g_free);
+    g_clear_pointer(&app->preferred_onion_file, g_free);
     g_clear_pointer(&app->content_filter_store_dir, g_free);
     g_clear_pointer(&app->tor_runtime_file, g_free);
     g_clear_pointer(&app->tor_proxy_uri, g_free);
@@ -835,6 +838,10 @@ static void nion_cleanup(NionApp *app)
     if (app->autoplay_allowed_sites) {
         g_hash_table_unref(app->autoplay_allowed_sites);
         app->autoplay_allowed_sites = NULL;
+    }
+    if (app->preferred_onion) {
+        g_hash_table_unref(app->preferred_onion);
+        app->preferred_onion = NULL;
     }
     if (app->content_filter) {
         webkit_user_content_filter_unref(app->content_filter);

@@ -5,6 +5,7 @@
 #include "per-site.h"
 #include "types.h"
 #include "util.h"
+#include "navigation.h"
 #include <gio/gio.h>
 #include <glib/gstdio.h>
 #include <string.h>
@@ -671,6 +672,133 @@ void nion_load_autoplay(NionApp *app)
         g_chmod(app->autoplay_file, 0600);
 }
 
+/* ---- Preferred Onion-Location per site (v2.1 #5) ---- */
+
+gchar *nion_site_key_for_uri(const gchar *uri)
+{
+    /* Reuse the zoom key (clearnet http/https host, lowercase). */
+    return nion_site_zoom_key_for_uri(uri);
+}
+
+void nion_save_preferred_onion(NionApp *app)
+{
+    if (!app || app->is_private || !app->preferred_onion_file || !app->preferred_onion)
+        return;
+
+    GKeyFile *key_file = g_key_file_new();
+    g_key_file_set_integer(key_file, "Meta", "format", NION_PREFERRED_ONION_FORMAT);
+
+    GList *keys = g_hash_table_get_keys(app->preferred_onion);
+    keys = g_list_sort(keys, (GCompareFunc)g_strcmp0);
+    guint index = 0;
+    for (GList *node = keys; node && index < NION_MAX_PREFERRED_ONION_ENTRIES;
+         node = node->next) {
+        const gchar *site_key = node->data;
+        const gchar *onion = site_key ? g_hash_table_lookup(app->preferred_onion, site_key) : NULL;
+        if (!site_key || !*site_key || !onion || !*onion ||
+            strlen(site_key) > 1024 || strlen(onion) > 256)
+            continue;
+
+        gchar *group = g_strdup_printf("Site-%u", index++);
+        g_key_file_set_string(key_file, group, "key", site_key);
+        g_key_file_set_string(key_file, group, "onion", onion);
+        g_free(group);
+    }
+    g_list_free(keys);
+    g_key_file_set_integer(key_file, "Meta", "count", (gint)index);
+    nion_write_key_file_atomic(key_file, app->preferred_onion_file);
+    g_key_file_free(key_file);
+}
+
+void nion_load_preferred_onion(NionApp *app)
+{
+    if (!app)
+        return;
+    if (app->preferred_onion)
+        g_hash_table_unref(app->preferred_onion);
+    app->preferred_onion = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+    if (app->is_private || !app->preferred_onion_file)
+        return;
+    if (!g_file_test(app->preferred_onion_file, G_FILE_TEST_EXISTS))
+        return;
+    if (!nion_profile_file_within_limit(app->preferred_onion_file,
+                                        NION_MAX_PREFERRED_ONION_FILE_BYTES)) {
+        nion_quarantine_profile_file(app->preferred_onion_file, "preferred onions");
+        return;
+    }
+    GKeyFile *key_file = g_key_file_new();
+    GError *error = NULL;
+    if (!g_key_file_load_from_file(key_file, app->preferred_onion_file, G_KEY_FILE_NONE, &error)) {
+        g_warning("Could not load NiOn preferred onions: %s", error ? error->message : "unknown error");
+        g_clear_error(&error);
+        g_key_file_free(key_file);
+        nion_quarantine_profile_file(app->preferred_onion_file, "preferred onions");
+        return;
+    }
+    gboolean valid = TRUE;
+    gint format = g_key_file_get_integer(key_file, "Meta", "format", &error);
+    if (error || format != NION_PREFERRED_ONION_FORMAT) { valid = FALSE; g_clear_error(&error); }
+    gint count = 0;
+    if (valid) {
+        count = g_key_file_get_integer(key_file, "Meta", "count", &error);
+        if (error || count < 0 || count > NION_MAX_PREFERRED_ONION_ENTRIES) { valid = FALSE; g_clear_error(&error); }
+    }
+    for (gint i = 0; valid && i < count; i++) {
+        gchar *group = g_strdup_printf("Site-%d", i);
+        gchar *site_key = g_key_file_get_string(key_file, group, "key", &error);
+        gchar *onion = g_key_file_get_string(key_file, group, "onion", &error);
+        if (error || !site_key || !*site_key || !onion || !*onion ||
+            strlen(site_key) > 1024 || strlen(onion) > 256 ||
+            !nion_uri_is_onion(onion) ||
+            g_hash_table_contains(app->preferred_onion, site_key)) {
+            valid = FALSE; g_clear_error(&error); g_free(site_key); g_free(onion); g_free(group); break;
+        }
+        g_hash_table_insert(app->preferred_onion, site_key, onion);
+        g_free(group);
+    }
+    g_key_file_free(key_file);
+    if (!valid) {
+        g_hash_table_remove_all(app->preferred_onion);
+        nion_quarantine_profile_file(app->preferred_onion_file, "preferred onions");
+    } else
+        g_chmod(app->preferred_onion_file, 0600);
+}
+
+/* Remember (and persist) the preferred .onion twin for a clearnet site key.
+ * Returns TRUE when the mapping changed. Never used for Private Windows. */
+gboolean nion_remember_preferred_onion(NionApp *app, const gchar *site_key,
+                                       const gchar *onion_uri)
+{
+    if (!app || app->is_private || !site_key || !*site_key ||
+        !onion_uri || !*onion_uri || !nion_uri_is_onion(onion_uri))
+        return FALSE;
+    if (!app->preferred_onion)
+        nion_load_preferred_onion(app);
+    if (!app->preferred_onion)
+        return FALSE;
+
+    const gchar *existing = g_hash_table_lookup(app->preferred_onion, site_key);
+    if (existing && g_strcmp0(existing, onion_uri) == 0)
+        return FALSE;
+
+    if (!existing && g_hash_table_size(app->preferred_onion) >= NION_MAX_PREFERRED_ONION_ENTRIES) {
+        g_warning("NiOn preferred-onion limit reached; not persisting %s", site_key);
+        return FALSE;
+    }
+    g_hash_table_replace(app->preferred_onion, g_strdup(site_key), g_strdup(onion_uri));
+    nion_save_preferred_onion(app);
+    return TRUE;
+}
+
+/* Look up a remembered preferred .onion for a clearnet site key. */
+gchar *nion_preferred_onion_for_site_key(NionApp *app, const gchar *site_key)
+{
+    if (!app || !site_key || !*site_key || !app->preferred_onion)
+        return NULL;
+    const gchar *onion = g_hash_table_lookup(app->preferred_onion, site_key);
+    return onion ? g_strdup(onion) : NULL;
+}
+
 WebKitWebsitePolicies *nion_website_policies_for_uri(NionApp *app, const gchar *uri)
 {
     WebKitAutoplayPolicy policy;
@@ -728,5 +856,11 @@ void nion_wipe_all_site_rules(NionApp *app)
         g_hash_table_remove_all(app->autoplay_allowed_sites);
         if (!app->is_private && app->autoplay_file)
             g_unlink(app->autoplay_file);
+    }
+
+    if (app->preferred_onion) {
+        g_hash_table_remove_all(app->preferred_onion);
+        if (!app->is_private && app->preferred_onion_file)
+            g_unlink(app->preferred_onion_file);
     }
 }

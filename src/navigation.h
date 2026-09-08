@@ -18,6 +18,7 @@ gboolean nion_uri_is_onion(const gchar *uri);
 gboolean nion_uri_is_http_clearnet(const gchar *uri);
 gboolean nion_uri_is_https_clearnet(const gchar *uri);
 gboolean nion_scheme_is_internal_only(const gchar *scheme);
+gchar *nion_https_upgrade_uri(const gchar *uri);
 gchar *nion_external_protocol_scheme(const gchar *uri);
 gboolean nion_validate_uri(const gchar *uri, gchar **message);
 
