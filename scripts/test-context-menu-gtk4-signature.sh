@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC="$ROOT/src/main.c"
+SRC="$ROOT/src"
 python3 - "$SRC" <<'PY'
 from pathlib import Path
 import re, sys
-s=Path(sys.argv[1]).read_text()
+s='\n'.join(p.read_text() for p in sorted(Path(sys.argv[1]).glob('*')))
 pat=re.compile(r'on_webview_context_menu\s*\(\s*WebKitWebView\s*\*\s*web_view\s*,\s*WebKitContextMenu\s*\*\s*context_menu\s*,(?P<middle>.*?)gpointer\s+user_data\s*\)', re.S)
 ms=list(pat.finditer(s))
 if len(ms) != 2:

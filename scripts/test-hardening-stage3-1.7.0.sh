@@ -23,16 +23,16 @@ grep -Fq 'Stable release: 1.7.0' README.md || fail "README stable marker missing
 grep -Fq 'Stable GTK baseline       4.22.4' BUILDING.md || fail "BUILDING GTK stable baseline missing"
 grep -Fq 'Stable WebKitGTK baseline 2.52.5' BUILDING.md || fail "BUILDING WebKitGTK stable baseline missing"
 grep -Fq 'Stable GLib baseline      2.88.2' BUILDING.md || fail "BUILDING GLib stable baseline missing"
-grep -Fq 'Stable dependency baseline' src/main.c || fail "About stable baseline missing"
+grep -rFq 'Stable dependency baseline' src || fail "About stable baseline missing"
 grep -Fq 'GTKStableBaseline=$NION_GTK_TESTED_VERSION' scripts/build-appimage.sh || fail "AppImage BUILD-INFO GTK stable baseline missing"
 grep -Fq 'outside the preferred stable' scripts/build-appimage.sh || fail "AppImage unstable dependency warning missing"
 pass "dependency provenance surfaces"
 
-grep -Fq 'webkit_navigation_action_is_user_gesture' src/main.c || fail "Escape Guard user-gesture check missing"
-grep -Fq 'NION_SECURITY_SAFEST' src/main.c || fail "Security Level Safest implementation missing"
-grep -Fq 'WEBKIT_NETWORK_PROXY_MODE_CUSTOM' src/main.c || fail "Tor custom proxy missing"
-grep -Fq 'socks://127.0.0.1:9' src/main.c || fail "dead-SOCKS fail-closed guard missing"
-grep -Fq 'webkit_settings_set_enable_webrtc(settings, FALSE)' src/main.c || fail "WebRTC hardening missing"
+grep -rFq 'webkit_navigation_action_is_user_gesture' src || fail "Escape Guard user-gesture check missing"
+grep -rFq 'NION_SECURITY_SAFEST' src || fail "Security Level Safest implementation missing"
+grep -rFq 'WEBKIT_NETWORK_PROXY_MODE_CUSTOM' src || fail "Tor custom proxy missing"
+grep -rFq 'socks://127.0.0.1:9' src || fail "dead-SOCKS fail-closed guard missing"
+grep -rFq 'webkit_settings_set_enable_webrtc(settings, FALSE)' src || fail "WebRTC hardening missing"
 pass "1.7.0 security/fail-closed invariants"
 
 if grep -RInE --exclude='CHANGELOG.md' --exclude='TESTING.md' --exclude='test-hardening-stage3-1.7.0.sh' \

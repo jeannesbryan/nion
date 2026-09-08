@@ -75,18 +75,18 @@ if grep -Rqs --exclude='*.md' --exclude='release-preflight.sh' 'ControlPort' src
 else
   pass 'no Tor ControlPort runtime code'
 fi
-grep -q 'WEBKIT_NETWORK_PROXY_MODE_CUSTOM' src/main.c && pass 'WebKit custom proxy mode present' || failmsg 'custom proxy mode missing'
-grep -q 'socks://127.0.0.1:9' src/main.c && pass 'dead SOCKS proxy on Tor failure present' || failmsg 'dead proxy fail-closed guard missing'
-grep -q 'TOR OFFLINE — navigation blocked' src/main.c && pass 'policy-level offline navigation block present' || failmsg 'offline navigation policy guard missing'
-grep -q 'ClientRejectInternalAddresses 1' src/main.c && pass 'Tor internal-address rejection present' || failmsg 'Tor internal-address rejection missing'
-grep -q 'ClientDNSRejectInternalAddresses 1' src/main.c && pass 'Tor DNS internal-address rejection present' || failmsg 'Tor DNS internal-address rejection missing'
-grep -q 'webkit_settings_set_enable_webrtc(settings, FALSE)' src/main.c && pass 'WebRTC disabled' || failmsg 'WebRTC hardening missing'
+grep -rq 'WEBKIT_NETWORK_PROXY_MODE_CUSTOM' src && pass 'WebKit custom proxy mode present' || failmsg 'custom proxy mode missing'
+grep -rq 'socks://127.0.0.1:9' src && pass 'dead SOCKS proxy on Tor failure present' || failmsg 'dead proxy fail-closed guard missing'
+grep -rq 'TOR OFFLINE — navigation blocked' src && pass 'policy-level offline navigation block present' || failmsg 'offline navigation policy guard missing'
+grep -rq 'ClientRejectInternalAddresses 1' src && pass 'Tor internal-address rejection present' || failmsg 'Tor internal-address rejection missing'
+grep -rq 'ClientDNSRejectInternalAddresses 1' src && pass 'Tor DNS internal-address rejection present' || failmsg 'Tor DNS internal-address rejection missing'
+grep -rq 'webkit_settings_set_enable_webrtc(settings, FALSE)' src && pass 'WebRTC disabled' || failmsg 'WebRTC hardening missing'
 
 printf '\n== Profile resilience / 1.2 regressions ==\n'
-grep -q 'nion_quarantine_profile_file' src/main.c && pass 'profile quarantine path present' || failmsg 'profile quarantine missing'
-grep -q 'NION_MAX_SESSION_FILE_BYTES' src/main.c && pass 'session size bound present' || failmsg 'session size bound missing'
-grep -q 'NION_MAX_DOWNLOAD_HISTORY 500' src/main.c && pass 'download history bound present' || failmsg 'download history bound missing'
-grep -q 'SQLite header' src/main.c && pass 'cookie SQLite sanity check present' || failmsg 'cookie DB sanity check missing'
+grep -rq 'nion_quarantine_profile_file' src && pass 'profile quarantine path present' || failmsg 'profile quarantine missing'
+grep -rq 'NION_MAX_SESSION_FILE_BYTES' src && pass 'session size bound present' || failmsg 'session size bound missing'
+grep -rq 'NION_MAX_DOWNLOAD_HISTORY 500' src && pass 'download history bound present' || failmsg 'download history bound missing'
+grep -rq 'SQLite header' src && pass 'cookie SQLite sanity check present' || failmsg 'cookie DB sanity check missing'
 for test in \
   scripts/test-zoom-stage3.sh \
   scripts/test-site-info-stage4.sh \
