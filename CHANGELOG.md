@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.1.0 — Stable
+
+### Privacy & anonymity
+
+- **Tor New Identity (circuit rotation + clean slate):** a single action (menu ☰ → New Identity, `Ctrl+Shift+U`, or the Start Page button) stops the bundled Tor, rotates its guard state aside for fresh circuits, wipes every per-site behavioral rule (zoom, JavaScript overrides, content-blocking exceptions, autoplay allowances) and all temporary permissions across the normal window and every open Private Window, asynchronously purges cookies/storage/caches through WebKit's data manager (gated so the new circuit never sees stale site data), then restarts Tor through the fail-closed path — every window rides `connecting → bootstrapping → ● TOR CONNECTED`. Deliberately adds no Tor control-port surface.
+- **Strict HTTPS:** clearnet `http://` navigation is auto-upgraded to its `https://` twin before anything loads. Only when a site genuinely has no HTTPS or serves an invalid certificate does NiOn refuse the silent downgrade and surface an explicit plain-HTTP warning (per-tab, per-origin temporary allowance preserved). `.onion` services are never upgraded — plain HTTP by design, end-to-end inside Tor.
+- **Onion-Location memory:** a freshly advertised Onion-Location is remembered per clearnet site (`preferred-onion.ini`, 0600, size/entry-capped, quarantine-on-corruption), so repeat visits can open the `.onion` twin in a new tab with one click even when the page stops advertising. Forget Site and New Identity clean-slate both drop the mapping.
+- **Privacy Dashboard Start Page:** the internal home page now mirrors live state — Tor connection status, current Security Level, active tab count, and a live "Discarded" count — and carries a user-gesture-gated **↻ New Identity** button (`nion://new-identity`).
+
+### Memory & performance (4 GB friendly)
+
+- **Background Tab Discard (auto-suspend):** a background tab idle past 5 minutes is softly unloaded — its heavy page is released from the shared WebKit web process by swapping to a tiny internal "💤 Suspended" document while the lightweight tab shell, strip entry, title, pinned and mute state survive. Clicking the tab (or switching to it) revives it through the normal Tor-gated loader. A 💤 chip marks suspended tabs, the 15-second sweep only ever touches non-current / non-pinned / non-audio / real-URI tabs, and session restore persists the *real* URI (never the placeholder). Verified safe against WebKitGTK's shared-process model: tabs share one WebProcess, so discard unloads rather than killing (a kill would take sibling tabs down).
+- **Always-on memory-pressure shedding:** native `WebKitMemoryPressureSettings` are installed before the first network session — a 1.5 GB working-set cap with 0.33/0.50 release thresholds, kill disabled, and a 2-second poll (WebKit's default is 30 s) so memory freed by a discard returns to the OS within seconds. No Preferences toggle: every NiOn user gets the optimized lightweight experience by default.
+
+### Hardening
+
+- HTTPS-first and escape-guard invariants preserved through all of the above; `.onion` and Tor-internal HTTP are excluded from strict-HTTPS upgrade; double failure-callbacks (TLS + load-failed) are suppressed so the plain-HTTP refusal appears exactly once.
+
 ## 2.0.0 — Stable
 
 ### Modular architecture

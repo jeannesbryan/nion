@@ -2,10 +2,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-fail(){ echo "2.0.0 ESCAPE GUARDS STAGE 2: FAIL: $*" >&2; exit 1; }
+fail(){ echo "2.1.0 ESCAPE GUARDS STAGE 2: FAIL: $*" >&2; exit 1; }
 SRC=src
 
-[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "2.0.0" ]] || fail 'manifest version is not 2.0.0'
+[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "2.1.0" ]] || fail 'manifest version is not 2.1.0'
 release_type="$(tr -d '\r\n' < release/manifest/APPSTREAM_RELEASE_TYPE)"
 release_status="$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)"
 [[ "$release_type" == "development" || "$release_type" == "stable" ]] || fail 'invalid AppStream release type'
@@ -32,9 +32,9 @@ done
 grep -rFq '"External URI handlers", "USER-GESTURE + CONFIRM"' "$SRC" || fail 'privacy audit external handler status missing'
 grep -rFq '"Popup / new-window escape", "USER-GESTURE ONLY"' "$SRC" || fail 'privacy audit popup status missing'
 
-grep -Eq '\\*\\*(Current development: 2\.0\.0 — Stage 2 \(Escape Guards\)|Stable release: 2\.0\.0)' README.md || fail 'README Stage 2/final marker missing'
+grep -Eq '\\*\\*(Current development: 2\.1\.0 — Stage 2 \(Escape Guards\)|Stable release: 2\.1\.0)' README.md || fail 'README Stage 2/final marker missing'
 grep -Fq '### Escape guards' README.md || fail 'README escape guard section missing'
-grep -Fq '## NiOn 2.0.0 Stage 2 — Escape Guards' TESTING.md || fail 'Stage 2 runtime checklist missing'
+grep -Fq '## NiOn 2.1.0 Stage 2 — Escape Guards' TESTING.md || fail 'Stage 2 runtime checklist missing'
 grep -Fq '## External application boundary' PRIVACY.md || fail 'privacy external boundary missing'
 
-printf 'NION 2.0.0 ESCAPE GUARDS STAGE 2: PASS\n'
+printf 'NION 2.1.0 ESCAPE GUARDS STAGE 2: PASS\n'

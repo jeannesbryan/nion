@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NiOn — Minimal Onion Browser over Tor</title>
+<meta name="description" content="NiOn 2.0.0 — Minimal Onion Browser. Tor-only, fail-closed, modular. Download the release AppImage.">
+<style>
+  :root {
+    /* NiOn / GNOME Adwaita-light palette */
+    --bg:        #f6f5f4;   /* Adwaita light window background */
+    --bg-soft:   #fbfbfa;
+    --card:      #ffffff;
+    --border:    #deddda;   /* Adwaita borders */
+    --border-2:  #e5e4e1;
+    --text:      #242424;   /* near-black body */
+    --text-soft: #414141;
+    --muted:     #6f6f6c;
+    --faint:     #8f8f8c;
+    --dark:      #111111;   /* NiOn logo black */
+    --on-dark:   #e8e8e8;   /* NiOn logo light */
+    --green:     #258a46;   /* real “Tor connected” status dot */
+    --green-bg:  #e6f3ea;
+    --gold:      #e5a50a;   /* app bookmark accent */
+    --radius:    14px;
+    --radius-sm: 9px;
+    --shadow:    0 1px 2px rgba(0,0,0,.04), 0 6px 22px rgba(0,0,0,.05);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background:
+      radial-gradient(1200px 420px at 50% -140px, #ffffff 0%, rgba(255,255,255,0) 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Cantarell", "Inter", "Roboto", "Ubuntu", -apple-system,
+                 "Segoe UI", "Noto Sans", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .wrap {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 56px 24px 40px;
+  }
+
+  /* ---------- Header ---------- */
+  header { text-align: center; padding-bottom: 34px; }
+
+  .logo {
+    display: inline-block;
+    margin-bottom: 20px;
+  }
+  .logo img {
+    display: block;
+    max-width: 80px;
+    width: 100%;
+    height: auto;
+    border-radius: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 40px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    color: var(--dark);
+  }
+
+  .subtitle {
+    margin: 0;
+    font-size: 17px;
+    color: var(--muted);
+    font-weight: 450;
+  }
+
+  /* ---------- Status pill (mimics the in-app status bar) ---------- */
+  .status-row { display: flex; justify-content: center; margin: 26px 0 8px; }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    background: var(--card);
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    padding: 7px 16px 7px 12px;
+    box-shadow: var(--shadow-sm);
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--text-soft);
+    letter-spacing: .01em;
+  }
+  .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 3px var(--green-bg);
+  }
+  .status-pill .label { color: #1e5f38; }
+  .status-pill .sep { color: var(--border); font-weight: 400; }
+  .status-pill .muted { color: var(--faint); font-weight: 500; }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 30px 32px;
+  }
+  .card + .card { margin-top: 22px; }
+
+  .eyebrow {
+    display: block;
+    font-size: 12px;
+    font-weight: 750;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 10px;
+  }
+
+  .card h2 {
+    margin: 0 0 14px;
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--dark);
+    line-height: 1.25;
+  }
+
+  .card p { margin: 0 0 14px; color: var(--text-soft); }
+  .card p:last-child { margin-bottom: 0; }
+  .card strong { color: var(--text); font-weight: 650; }
+  code {
+    font-family: ui-monospace, "Cantarell Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: .86em;
+    background: var(--bg);
+    border: 1px solid var(--border-2);
+    border-radius: 6px;
+    padding: 1px 6px;
+    color: var(--text);
+  }
+
+  /* release-stat grid */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 20px 0 6px;
+  }
+  .stat {
+    background: var(--bg-soft);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-sm);
+    padding: 13px 14px;
+  }
+  .stat b {
+    display: block;
+    font-size: 19px;
+    font-weight: 750;
+    color: var(--dark);
+    letter-spacing: -0.01em;
+  }
+  .stat span {
+    font-size: 12.5px;
+    color: var(--muted);
+    font-weight: 550;
+  }
+
+  ul.checks { margin: 16px 0 0; padding: 0; list-style: none; }
+  ul.checks li {
+    position: relative;
+    padding: 4px 0 4px 26px;
+    color: var(--text-soft);
+  }
+  ul.checks li::before {
+    content: "";
+    position: absolute;
+    left: 2px; top: 12px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--green);
+    opacity: .85;
+  }
+
+  /* ---------- Downloads ---------- */
+  .dl-title { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+
+  .dl-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 22px;
+  }
+
+  .btn {
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 15px 17px;
+    background: var(--bg-soft);
+    transition: border-color .12s ease, background .12s ease, transform .06s ease, box-shadow .12s ease;
+  }
+  .btn:hover  { background: #fff; border-color: #c9c7c3; box-shadow: var(--shadow-sm); }
+  .btn:active { transform: translateY(1px); }
+
+  .btn .ic {
+    flex: 0 0 auto;
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    color: var(--on-dark);
+    background: var(--dark);
+  }
+  .btn.alt .ic { background: var(--green); }
+
+  .btn .t { display: block; font-weight: 700; font-size: 14.5px; color: var(--text); line-height: 1.3; }
+  .btn .s { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+
+  .checksum-block { margin-top: 20px; }
+  .checksum-block .cap {
+    font-size: 12px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--faint); margin-bottom: 8px;
+  }
+  .checksum {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--dark);
+    color: var(--on-dark);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    letter-spacing: .02em;
+    word-break: break-all;
+    user-select: all;
+  }
+  .checksum .ok {
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    color: #111;
+    background: #7fd89a;
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+
+  /* ---------- Secondary ("what's new") card — same look, visually lighter ---------- */
+  .card--secondary {
+    background: var(--bg-soft);
+    box-shadow: none;
+    padding: 22px 26px;
+  }
+  .card--secondary h2 { font-size: 18px; letter-spacing: 0; margin-bottom: 10px; }
+  .card--secondary .stats { margin: 16px 0 2px; }
+  .card--secondary .stat { padding: 10px 12px; }
+  .card--secondary .stat b { font-size: 17px; }
+
+  /* ---------- Footer ---------- */
+  footer {
+    margin-top: 34px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--faint);
+    line-height: 1.7;
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer .rule {
+    display: inline-block;
+    width: 56px; height: 1px;
+    background: var(--border);
+    margin-bottom: 10px;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 620px) {
+    .wrap { padding: 40px 16px 28px; }
+    .card { padding: 24px 20px; }
+    .stats { grid-template-columns: 1fr; }
+    .dl-actions { grid-template-columns: 1fr; }
+    h1 { font-size: 34px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ======= Header / brand ======= -->
+  <header>
+    <div class="logo">
+      <img src="../assets/nion.svg" alt="NiOn logo" width="80" height="80">
+    </div>
+    <h1>NiOn</h1>
+    <p class="subtitle">Minimal Onion Browser over Tor</p>
+  </header>
+
+  <!-- ======= Live status pill (mimics the in-app status bar) ======= -->
+  <div class="status-row">
+    <span class="status-pill">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="label">Tor Connected</span>
+      <span class="sep">·</span>
+      <span>Status: Green</span>
+    </span>
+  </div>
+
+  <!-- ======= About NiOn card ======= -->
+  <section class="card" aria-labelledby="about-title">
+    <span class="eyebrow">About NiOn</span>
+    <h2 id="about-title">One tiny browser. Everything through Tor — or nothing at all.</h2>
+    <p>
+      NiOn is a small, fast Linux browser that routes <strong>every</strong>
+      request — ordinary websites and <strong>.onion</strong> sites alike —
+      through its own <strong>bundled Tor runtime</strong>. No system Tor to
+      install, no proxy to configure, nothing extra to trust: launch NiOn and
+      browse, knowing the connection is Tor.
+    </p>
+    <p>
+      It is <strong>fail-closed by design</strong>. The instant Tor cannot
+      start or drops, NiOn stops loading pages and shows you what went wrong —
+      it <em>never</em> silently falls back to a direct connection. Even when
+      something breaks, your traffic cannot quietly leak around the Tor
+      network.
+    </p>
+    <p>
+      And it stays <strong>minimal on purpose</strong>: no accounts, no cloud
+      sync, no telemetry, no extension engine. Just the essentials — tabs,
+      bookmarks, downloads, find in page, print — plus a clean
+      <strong>Private Window</strong> that keeps no trace of where you went.
+    </p>
+
+    <div class="stats">
+      <div class="stat"><b>Bundled</b><span>Tor runtime built in</span></div>
+      <div class="stat"><b>Fail-closed</b><span>no direct fallback, ever</span></div>
+      <div class="stat"><b>Minimal</b><span>no accounts, no telemetry</span></div>
+    </div>
+
+    <ul class="checks">
+      <li>Browse the open web and <strong>.onion</strong> sites through the same Tor route.</li>
+      <li><strong>Private Window</strong> isolates cookies, downloads &amp; permissions from your normal session.</li>
+      <li>Camera, microphone &amp; location are <strong>blocked by default</strong> — you decide, per site.</li>
+      <li>Security levels, per-site JavaScript, and a lightweight tracker filter keep you in control.</li>
+    </ul>
+  </section>
+
+  <!-- ======= What's new in 2.0.0 (secondary) ======= -->
+  <section class="card card--secondary" aria-labelledby="new-title">
+    <span class="eyebrow">Release notes</span>
+    <h2 id="new-title">What's new in 2.0.0</h2>
+    <p>
+      NiOn 2.0.0 is a <strong>maintenance &amp; architecture</strong> release:
+      the codebase was rebuilt into focused, auditable modules with the same
+      security invariants. Same clean browser, cleaner engine underneath.
+    </p>
+    <div class="stats">
+      <div class="stat"><b>599</b><span>main.c lines (was ~10.8k)</span></div>
+      <div class="stat"><b>18</b><span>focused source modules</span></div>
+      <div class="stat"><b>100%</b><span>static test suite green</span></div>
+    </div>
+  </section>
+
+  <!-- ======= Downloads card ======= -->
+  <section class="card" aria-labelledby="downloads-title">
+    <div class="dl-title">
+      <span class="eyebrow" style="margin:0">Downloads</span>
+    </div>
+    <h2 id="downloads-title" style="margin-bottom:6px">Get NiOn 2.0.0</h2>
+    <p style="margin-bottom:0">Linux&nbsp;x86_64 · AppImage · GPL-3.0-or-later</p>
+
+    <div class="dl-actions">
+      <a class="btn" href="../dist/NiOn-2.0.0-x86_64.AppImage" download>
+        <span class="ic" aria-hidden="true">↓</span>
+        <span>
+          <span class="t">NiOn-2.0.0-x86_64.AppImage</span>
+          <span class="s">103 MB · self-contained · bundled Tor runtime</span>
+        </span>
+      </a>
+      <a class="btn alt" href="../dist/NiOn-2.0.0-x86_64.AppImage.sha256" download>
+        <span class="ic" aria-hidden="true">#</span>
+        <span>
+          <span class="t">SHA-256 checksum</span>
+          <span class="s">Verify your download with <code style="background:transparent;border:none;padding:0">sha256sum -c</code></span>
+        </span>
+      </a>
+    </div>
+
+    <div class="checksum-block">
+      <div class="cap">Published checksum</div>
+      <div class="checksum"><span class="ok">SHA-256</span>7e220220f515551812d498526b51ad61ae41a97191f0be480555dd0f2fa52c8a</div>
+    </div>
+  </section>
+
+  <!-- ======= Footer ======= -->
+  <footer>
+    <span class="rule"></span><br>
+    © 2026 Jeannes Bryan · NiOn is <strong>not</strong> Tor Browser and makes no anonymity guarantees<br>
+    <a href="../docs/split-main-c-plan.md">Architecture</a> ·
+    <a href="../SECURITY.md">Security</a> ·
+    <a href="../PRIVACY.md">Privacy</a> ·
+    <a href="../CHANGELOG.md">Changelog</a> ·
+    <a href="../THIRD_PARTY_NOTICES.md">Third-party notices</a>
+  </footer>
+
+</div>
+</body>
+</html>

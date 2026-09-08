@@ -7,8 +7,8 @@ source "$ROOT/scripts/manifest.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
-[[ "$NION_VERSION" == "2.0.0" ]] || fail "expected NiOn 2.0.0"
-[[ "$NION_RELEASE_STATUS" == "Stable" ]] || fail "2.0.0 must be Stable"
+[[ "$NION_VERSION" == "2.1.0" ]] || fail "expected NiOn 2.1.0"
+[[ "$NION_RELEASE_STATUS" == "Stable" ]] || fail "2.1.0 must be Stable"
 [[ "$NION_APPSTREAM_RELEASE_TYPE" == "stable" ]] || fail "AppStream release must be stable"
 pass "stable release metadata"
 
@@ -19,7 +19,7 @@ pass "stable release metadata"
 [[ "$NION_GLIB_TESTED_VERSION" == "2.88.2" ]] || fail "GLib stable baseline mismatch"
 pass "minimum vs stable-baseline dependency metadata"
 
-grep -Fq 'Stable release: 2.0.0' README.md || fail "README stable marker missing"
+grep -Fq 'Stable release: 2.1.0' README.md || fail "README stable marker missing"
 grep -Fq 'Stable GTK baseline       4.22.4' BUILDING.md || fail "BUILDING GTK stable baseline missing"
 grep -Fq 'Stable WebKitGTK baseline 2.52.5' BUILDING.md || fail "BUILDING WebKitGTK stable baseline missing"
 grep -Fq 'Stable GLib baseline      2.88.2' BUILDING.md || fail "BUILDING GLib stable baseline missing"
@@ -33,12 +33,12 @@ grep -rFq 'NION_SECURITY_SAFEST' src || fail "Security Level Safest implementati
 grep -rFq 'WEBKIT_NETWORK_PROXY_MODE_CUSTOM' src || fail "Tor custom proxy missing"
 grep -rFq 'socks://127.0.0.1:9' src || fail "dead-SOCKS fail-closed guard missing"
 grep -rFq 'webkit_settings_set_enable_webrtc(settings, FALSE)' src || fail "WebRTC hardening missing"
-pass "2.0.0 security/fail-closed invariants"
+pass "2.1.0 security/fail-closed invariants"
 
-if grep -RInE --exclude='CHANGELOG.md' --exclude='TESTING.md' --exclude='test-hardening-stage3-2.0.0.sh' \
+if grep -RInE --exclude='CHANGELOG.md' --exclude='TESTING.md' --exclude='test-hardening-stage3-2.1.0.sh' \
   'Current development: 2\.0\.0|development — Stage [12]|Development Stage [12]' README.md BUILDING.md PRIVACY.md SECURITY.md data release/manifest 2>/dev/null; then
-  fail "stale 2.0.0 development marker remains on release surfaces"
+  fail "stale 2.1.0 development marker remains on release surfaces"
 fi
 pass "no stale development release marker"
 
-echo 'NION 2.0.0 FINAL HARDENING CHECK: PASS'
+echo 'NION 2.1.0 FINAL HARDENING CHECK: PASS'
