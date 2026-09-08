@@ -73,6 +73,7 @@ executable(
   'src/settings.c',
   'src/site-data.c',
   'src/app.c',
+  'src/ui.c',
   nion_resources,
   include_directories: include_directories('.'),
   dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
