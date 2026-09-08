@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NiOn — Minimal Onion Browser over Tor</title>
-<meta name="description" content="NiOn 2.0.0 — Minimal Onion Browser. Tor-only, fail-closed, modular. Download the release AppImage.">
+<meta name="description" content="NiOn 2.1.0 — Minimal Onion Browser. Tor-only, fail-closed, RAM-lean. Download the release AppImage.">
 <style>
   :root {
     /* NiOn / GNOME Adwaita-light palette */
@@ -359,19 +359,26 @@
     </ul>
   </section>
 
-  <!-- ======= What's new in 2.0.0 (secondary) ======= -->
+  <!-- ======= What's new in 2.1.0 (secondary) ======= -->
   <section class="card card--secondary" aria-labelledby="new-title">
     <span class="eyebrow">Release notes</span>
-    <h2 id="new-title">What's new in 2.0.0</h2>
+    <h2 id="new-title">What's new in 2.1.0</h2>
     <p>
-      NiOn 2.0.0 is a <strong>maintenance &amp; architecture</strong> release:
-      the codebase was rebuilt into focused, auditable modules with the same
-      security invariants. Same clean browser, cleaner engine underneath.
+      NiOn 2.1.0 is the <strong>privacy &amp; performance</strong> release —
+      built to stay comfortable inside a 4&nbsp;GB machine while sharpening
+      your anonymity:
     </p>
+    <ul class="checks">
+      <li><strong>Tor New Identity</strong> — one click (or <code>Ctrl+Shift+U</code>) rotates your circuit <em>and</em> wipes cookies, site rules &amp; permissions for a true clean slate.</li>
+      <li><strong>Background Tab Discard</strong> — idle tabs are softly suspended (💤) and their memory handed back to the OS, so you can keep many tabs open without the RAM bill.</li>
+      <li><strong>Strict HTTPS</strong> — cleartext HTTP is auto-upgraded to HTTPS; when a site has none, NiOn refuses the silent downgrade and asks you first.</li>
+      <li><strong>Privacy Dashboard</strong> — the start page shows Tor status, security level and live discarded-tab count, with a New Identity button at hand.</li>
+      <li><strong>Onion-Location memory</strong> — NiOn remembers a site's preferred <strong>.onion</strong> so repeat visits can jump straight to it.</li>
+    </ul>
     <div class="stats">
-      <div class="stat"><b>599</b><span>main.c lines (was ~10.8k)</span></div>
-      <div class="stat"><b>18</b><span>focused source modules</span></div>
-      <div class="stat"><b>100%</b><span>static test suite green</span></div>
+      <div class="stat"><b>4 GB</b><span>friendly: discard + pressure shedding</span></div>
+      <div class="stat"><b>2 s</b><span>memory poll (was WebKit's 30 s)</span></div>
+      <div class="stat"><b>5 / 5</b><span>roadmap features shipped</span></div>
     </div>
   </section>
 
@@ -380,18 +387,18 @@
     <div class="dl-title">
       <span class="eyebrow" style="margin:0">Downloads</span>
     </div>
-    <h2 id="downloads-title" style="margin-bottom:6px">Get NiOn 2.0.0</h2>
+    <h2 id="downloads-title" style="margin-bottom:6px">Get NiOn 2.1.0</h2>
     <p style="margin-bottom:0">Linux&nbsp;x86_64 · AppImage · GPL-3.0-or-later</p>
 
     <div class="dl-actions">
-      <a class="btn" href="../dist/NiOn-2.0.0-x86_64.AppImage" download>
+      <a class="btn" href="../dist/NiOn-2.1.0-x86_64.AppImage" download>
         <span class="ic" aria-hidden="true">↓</span>
         <span>
-          <span class="t">NiOn-2.0.0-x86_64.AppImage</span>
-          <span class="s">103 MB · self-contained · bundled Tor runtime</span>
+          <span class="t">NiOn-2.1.0-x86_64.AppImage</span>
+          <span class="s">self-contained · bundled Tor runtime · RAM-lean</span>
         </span>
       </a>
-      <a class="btn alt" href="../dist/NiOn-2.0.0-x86_64.AppImage.sha256" download>
+      <a class="btn alt" href="../dist/NiOn-2.1.0-x86_64.AppImage.sha256" download>
         <span class="ic" aria-hidden="true">#</span>
         <span>
           <span class="t">SHA-256 checksum</span>
@@ -402,7 +409,7 @@
 
     <div class="checksum-block">
       <div class="cap">Published checksum</div>
-      <div class="checksum"><span class="ok">SHA-256</span>7e220220f515551812d498526b51ad61ae41a97191f0be480555dd0f2fa52c8a</div>
+      <div class="checksum"><span class="ok">SHA-256</span>36f444325a06cde1a81124e4e300992e18314498c1d6f259210e2cd36f2fe9af</div>
     </div>
   </section>
 
