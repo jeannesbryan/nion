@@ -4,24 +4,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NiOn — Minimal Onion Browser over Tor</title>
-<meta name="description" content="NiOn 2.1.0 — Minimal Onion Browser. Tor-only, fail-closed, RAM-lean. Download the release AppImage.">
+<meta name="description" content="NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens both clearnet and Tor v3 .onion sites through its own bundled Tor runtime and is designed to fail closed.">
+<meta name="keywords" content="NiOn, browser, Tor, minimal, onion, Linux, AppImage, fail-closed, GTK 4, WebKitGTK 6, Jeannes Bryan">
+<meta name="author" content="Jeannes Bryan">
+<meta name="robots" content="index,follow,max-image-preview:large">
+
+<!-- OpenGraph / Facebook -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="NiOn — Minimal Onion Browser">
+<meta property="og:url" content="https://jeannesbryan.my.id/projects/nion">
+<meta property="og:site_name" content="Jeannes Bryan Projects">
+<meta property="og:description" content="NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It routes every request through its own bundled Tor runtime.">
+<meta property="og:image" content="https://jeannesbryan.my.id/projects/nion/assets/nion.svg">
+<meta property="og:image:width" content="400">
+<meta property="og:image:height" content="400">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="NiOn — Minimal Onion Browser">
+<meta name="twitter:description" content="NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It routes every request through its own bundled Tor runtime.">
+<meta name="twitter:image" content="https://jeannesbryan.my.id/projects/nion/assets/nion.svg">
+
+<link rel="canonical" href="https://jeannesbryan.my.id/projects/nion">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23000000'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='%23ffffff' font-family='Impact, Arial Black, sans-serif' font-size='55' font-weight='bold' letter-spacing='-1'%3EJB%3C/text%3E%3C/svg%3E">
+
 <style>
   :root {
-    /* NiOn / GNOME Adwaita-light palette */
-    --bg:        #f6f5f4;   /* Adwaita light window background */
+    --bg:        #f6f5f4;
     --bg-soft:   #fbfbfa;
     --card:      #ffffff;
-    --border:    #deddda;   /* Adwaita borders */
+    --border:    #deddda;
     --border-2:  #e5e4e1;
-    --text:      #242424;   /* near-black body */
+    --text:      #242424;
     --text-soft: #414141;
     --muted:     #6f6f6c;
     --faint:     #8f8f8c;
-    --dark:      #111111;   /* NiOn logo black */
-    --on-dark:   #e8e8e8;   /* NiOn logo light */
-    --green:     #258a46;   /* real “Tor connected” status dot */
-    --green-bg:  #e6f3ea;
-    --gold:      #e5a50a;   /* app bookmark accent */
+    --dark:      #111111;
+    --on-dark:   #e8e8e8;
+    --green:     #258a46;
+    --gold:      #e5a50a;
     --radius:    14px;
     --radius-sm: 9px;
     --shadow:    0 1px 2px rgba(0,0,0,.04), 0 6px 22px rgba(0,0,0,.05);
@@ -29,85 +50,17 @@
   }
 
   * { box-sizing: border-box; }
-
   html, body { margin: 0; padding: 0; }
-
   body {
-    background:
-      radial-gradient(1200px 420px at 50% -140px, #ffffff 0%, rgba(255,255,255,0) 60%),
-      var(--bg);
+    background: radial-gradient(1200px 420px at 50% -140px, #ffffff 0%, rgba(255,255,255,0) 60%), var(--bg);
     color: var(--text);
-    font-family: "Cantarell", "Inter", "Roboto", "Ubuntu", -apple-system,
-                 "Segoe UI", "Noto Sans", system-ui, sans-serif;
+    font-family: "Cantarell", "Inter", "Roboto", "Ubuntu", -apple-system, "Segoe UI", "Noto Sans", system-ui, sans-serif;
     font-size: 16px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-
-  .wrap {
-    max-width: 780px;
-    margin: 0 auto;
-    padding: 56px 24px 40px;
-  }
-
-  /* ---------- Header ---------- */
-  header { text-align: center; padding-bottom: 34px; }
-
-  .logo {
-    display: inline-block;
-    margin-bottom: 20px;
-  }
-  .logo img {
-    display: block;
-    max-width: 80px;
-    width: 100%;
-    height: auto;
-    border-radius: 18px;
-    box-shadow: var(--shadow-sm);
-  }
-
-  h1 {
-    margin: 0 0 6px;
-    font-size: 40px;
-    font-weight: 750;
-    letter-spacing: -0.02em;
-    color: var(--dark);
-  }
-
-  .subtitle {
-    margin: 0;
-    font-size: 17px;
-    color: var(--muted);
-    font-weight: 450;
-  }
-
-  /* ---------- Status pill (mimics the in-app status bar) ---------- */
-  .status-row { display: flex; justify-content: center; margin: 26px 0 8px; }
-
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    background: var(--card);
-    border: 1px solid var(--border-2);
-    border-radius: 999px;
-    padding: 7px 16px 7px 12px;
-    box-shadow: var(--shadow-sm);
-    font-size: 13px;
-    font-weight: 650;
-    color: var(--text-soft);
-    letter-spacing: .01em;
-  }
-  .dot {
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 0 3px var(--green-bg);
-  }
-  .status-pill .label { color: #1e5f38; }
-  .status-pill .sep { color: var(--border); font-weight: 400; }
-  .status-pill .muted { color: var(--faint); font-weight: 500; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 56px 24px 40px; }
 
   /* ---------- Cards ---------- */
   .card {
@@ -120,180 +73,66 @@
   .card + .card { margin-top: 22px; }
 
   .eyebrow {
-    display: block;
-    font-size: 12px;
-    font-weight: 750;
-    letter-spacing: .09em;
-    text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 10px;
+    display: block; font-size: 12px; font-weight: 750; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 10px;
   }
-
-  .card h2 {
-    margin: 0 0 14px;
-    font-size: 25px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    color: var(--dark);
-    line-height: 1.25;
-  }
-
+  .card h2 { margin: 0 0 14px; font-size: 25px; font-weight: 700; letter-spacing: -0.01em; color: var(--dark); line-height: 1.25; }
   .card p { margin: 0 0 14px; color: var(--text-soft); }
   .card p:last-child { margin-bottom: 0; }
   .card strong { color: var(--text); font-weight: 650; }
   code {
     font-family: ui-monospace, "Cantarell Mono", "SF Mono", Menlo, Consolas, monospace;
-    font-size: .86em;
-    background: var(--bg);
-    border: 1px solid var(--border-2);
-    border-radius: 6px;
-    padding: 1px 6px;
-    color: var(--text);
+    font-size: .86em; background: var(--bg); border: 1px solid var(--border-2);
+    border-radius: 6px; padding: 1px 6px; color: var(--text);
   }
 
-  /* release-stat grid */
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    margin: 20px 0 6px;
-  }
-  .stat {
-    background: var(--bg-soft);
-    border: 1px solid var(--border-2);
-    border-radius: var(--radius-sm);
-    padding: 13px 14px;
-  }
-  .stat b {
-    display: block;
-    font-size: 19px;
-    font-weight: 750;
-    color: var(--dark);
-    letter-spacing: -0.01em;
-  }
-  .stat span {
-    font-size: 12.5px;
-    color: var(--muted);
-    font-weight: 550;
-  }
+  /* ---------- Header Card ---------- */
+  .header-card { text-align: center; padding: 34px 24px; }
+  .logo { display: inline-block; margin-bottom: 16px; }
+  .logo img { display: block; max-width: 80px; width: 100%; height: auto; border-radius: 18px; box-shadow: var(--shadow-sm); }
+  h1 { margin: 0 0 6px; font-size: 40px; font-weight: 750; letter-spacing: -0.02em; color: var(--dark); }
+  .subtitle { margin: 0; font-size: 17px; color: var(--muted); font-weight: 450; }
 
   ul.checks { margin: 16px 0 0; padding: 0; list-style: none; }
-  ul.checks li {
-    position: relative;
-    padding: 4px 0 4px 26px;
-    color: var(--text-soft);
-  }
+  ul.checks li { position: relative; padding: 4px 0 4px 26px; color: var(--text-soft); }
   ul.checks li::before {
-    content: "";
-    position: absolute;
-    left: 2px; top: 12px;
-    width: 9px; height: 9px;
-    border-radius: 50%;
-    background: var(--green);
-    opacity: .85;
+    content: ""; position: absolute; left: 2px; top: 12px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--green); opacity: .85;
   }
 
   /* ---------- Downloads ---------- */
   .dl-title { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
-
-  .dl-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    margin-top: 22px;
-  }
-
+  .dl-actions { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 22px; }
   .btn {
-    display: flex;
-    align-items: flex-start;
-    gap: 13px;
-    text-decoration: none;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 15px 17px;
-    background: var(--bg-soft);
-    transition: border-color .12s ease, background .12s ease, transform .06s ease, box-shadow .12s ease;
+    display: flex; align-items: flex-start; gap: 13px; text-decoration: none;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 15px 17px;
+    background: var(--bg-soft); transition: border-color .12s ease, background .12s ease, transform .06s ease, box-shadow .12s ease;
   }
   .btn:hover  { background: #fff; border-color: #c9c7c3; box-shadow: var(--shadow-sm); }
   .btn:active { transform: translateY(1px); }
-
   .btn .ic {
-    flex: 0 0 auto;
-    width: 36px; height: 36px;
-    border-radius: 10px;
-    display: grid;
-    place-items: center;
-    font-size: 15px;
-    color: var(--on-dark);
-    background: var(--dark);
+    flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px; display: grid;
+    place-items: center; font-size: 15px; color: var(--on-dark); background: var(--dark);
   }
-  .btn.alt .ic { background: var(--green); }
-
   .btn .t { display: block; font-weight: 700; font-size: 14.5px; color: var(--text); line-height: 1.3; }
   .btn .s { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
 
-  .checksum-block { margin-top: 20px; }
-  .checksum-block .cap {
-    font-size: 12px; font-weight: 700; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--faint); margin-bottom: 8px;
-  }
-  .checksum {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--dark);
-    color: var(--on-dark);
-    border-radius: var(--radius-sm);
-    padding: 12px 16px;
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12.5px;
-    letter-spacing: .02em;
-    word-break: break-all;
-    user-select: all;
-  }
-  .checksum .ok {
-    flex: 0 0 auto;
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: .08em;
-    color: #111;
-    background: #7fd89a;
-    border-radius: 999px;
-    padding: 3px 9px;
-  }
-
-  /* ---------- Secondary ("what's new") card — same look, visually lighter ---------- */
-  .card--secondary {
-    background: var(--bg-soft);
-    box-shadow: none;
-    padding: 22px 26px;
-  }
+  /* ---------- Secondary Card ---------- */
+  .card--secondary { background: var(--bg-soft); box-shadow: none; padding: 22px 26px; }
   .card--secondary h2 { font-size: 18px; letter-spacing: 0; margin-bottom: 10px; }
-  .card--secondary .stats { margin: 16px 0 2px; }
-  .card--secondary .stat { padding: 10px 12px; }
-  .card--secondary .stat b { font-size: 17px; }
 
-  /* ---------- Footer ---------- */
-  footer {
-    margin-top: 34px;
+  /* ---------- Footer Card ---------- */
+  .footer-card {
     text-align: center;
-    font-size: 12.5px;
-    color: var(--faint);
-    line-height: 1.7;
-  }
-  footer a { color: var(--muted); text-decoration: none; }
-  footer a:hover { text-decoration: underline; }
-  footer .rule {
-    display: inline-block;
-    width: 56px; height: 1px;
-    background: var(--border);
-    margin-bottom: 10px;
+    font-size: 13px;
+    color: var(--muted);
+    padding: 24px;
   }
 
   /* ---------- Responsive ---------- */
   @media (max-width: 620px) {
     .wrap { padding: 40px 16px 28px; }
     .card { padding: 24px 20px; }
-    .stats { grid-template-columns: 1fr; }
-    .dl-actions { grid-template-columns: 1fr; }
     h1 { font-size: 34px; }
   }
 </style>
@@ -301,24 +140,14 @@
 <body>
 <div class="wrap">
 
-  <!-- ======= Header / brand ======= -->
-  <header>
+  <!-- ======= Header / brand (Now in a card) ======= -->
+  <header class="card header-card">
     <div class="logo">
-      <img src="../assets/nion.svg" alt="NiOn logo" width="80" height="80">
+      <img src="./assets/nion.svg" alt="NiOn logo" width="80" height="80">
     </div>
     <h1>NiOn</h1>
     <p class="subtitle">Minimal Onion Browser over Tor</p>
   </header>
-
-  <!-- ======= Live status pill (mimics the in-app status bar) ======= -->
-  <div class="status-row">
-    <span class="status-pill">
-      <span class="dot" aria-hidden="true"></span>
-      <span class="label">Tor Connected</span>
-      <span class="sep">·</span>
-      <span>Status: Green</span>
-    </span>
-  </div>
 
   <!-- ======= About NiOn card ======= -->
   <section class="card" aria-labelledby="about-title">
@@ -345,12 +174,6 @@
       <strong>Private Window</strong> that keeps no trace of where you went.
     </p>
 
-    <div class="stats">
-      <div class="stat"><b>Bundled</b><span>Tor runtime built in</span></div>
-      <div class="stat"><b>Fail-closed</b><span>no direct fallback, ever</span></div>
-      <div class="stat"><b>Minimal</b><span>no accounts, no telemetry</span></div>
-    </div>
-
     <ul class="checks">
       <li>Browse the open web and <strong>.onion</strong> sites through the same Tor route.</li>
       <li><strong>Private Window</strong> isolates cookies, downloads &amp; permissions from your normal session.</li>
@@ -375,11 +198,6 @@
       <li><strong>Privacy Dashboard</strong> — the start page shows Tor status, security level and live discarded-tab count, with a New Identity button at hand.</li>
       <li><strong>Onion-Location memory</strong> — NiOn remembers a site's preferred <strong>.onion</strong> so repeat visits can jump straight to it.</li>
     </ul>
-    <div class="stats">
-      <div class="stat"><b>4 GB</b><span>friendly: discard + pressure shedding</span></div>
-      <div class="stat"><b>2 s</b><span>memory poll (was WebKit's 30 s)</span></div>
-      <div class="stat"><b>5 / 5</b><span>roadmap features shipped</span></div>
-    </div>
   </section>
 
   <!-- ======= Downloads card ======= -->
@@ -391,37 +209,19 @@
     <p style="margin-bottom:0">Linux&nbsp;x86_64 · AppImage · GPL-3.0-or-later</p>
 
     <div class="dl-actions">
-      <a class="btn" href="../dist/NiOn-2.1.0-x86_64.AppImage" download>
+      <a class="btn" href="https://github.com/jeannesbryan/nion/releases/download/2.1.0/NiOn-2.1.0-x86_64.AppImage" download>
         <span class="ic" aria-hidden="true">↓</span>
         <span>
           <span class="t">NiOn-2.1.0-x86_64.AppImage</span>
           <span class="s">self-contained · bundled Tor runtime · RAM-lean</span>
         </span>
       </a>
-      <a class="btn alt" href="../dist/NiOn-2.1.0-x86_64.AppImage.sha256" download>
-        <span class="ic" aria-hidden="true">#</span>
-        <span>
-          <span class="t">SHA-256 checksum</span>
-          <span class="s">Verify your download with <code style="background:transparent;border:none;padding:0">sha256sum -c</code></span>
-        </span>
-      </a>
-    </div>
-
-    <div class="checksum-block">
-      <div class="cap">Published checksum</div>
-      <div class="checksum"><span class="ok">SHA-256</span>36f444325a06cde1a81124e4e300992e18314498c1d6f259210e2cd36f2fe9af</div>
     </div>
   </section>
 
-  <!-- ======= Footer ======= -->
-  <footer>
-    <span class="rule"></span><br>
-    © 2026 Jeannes Bryan · NiOn is <strong>not</strong> Tor Browser and makes no anonymity guarantees<br>
-    <a href="../docs/split-main-c-plan.md">Architecture</a> ·
-    <a href="../SECURITY.md">Security</a> ·
-    <a href="../PRIVACY.md">Privacy</a> ·
-    <a href="../CHANGELOG.md">Changelog</a> ·
-    <a href="../THIRD_PARTY_NOTICES.md">Third-party notices</a>
+  <!-- ======= Footer (Now in a card) ======= -->
+  <footer class="card footer-card">
+    © 2026 Jeannes Bryan · NiOn is <strong>not</strong> Tor Browser and makes no anonymity guarantees
   </footer>
 
 </div>
