@@ -61,7 +61,16 @@ for tool in readelf find sort awk; do
 done
 
 WORK=""
-cleanup() { [[ -n "$WORK" && -d "$WORK" ]] && rm -rf "$WORK"; }
+# The EXIT trap must never be able to change this script's exit status: under
+# `set -e` a trap handler whose last command fails *becomes* the script's exit
+# status, and `[[ ... ]] && rm -rf` returns 1 whenever WORK is empty (the common
+# case, since only the AppImage path needs a temp dir). Always return 0.
+cleanup() {
+  if [[ -n "$WORK" && -d "$WORK" ]]; then
+    rm -rf "$WORK"
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 if [[ -d "$TARGET" ]]; then
