@@ -29,6 +29,17 @@ Stable GLib baseline      2.80.0
 Supported C library floor glibc 2.39
 ```
 
+## What NiOn bundles, and what your system must provide
+
+NiOn ships GTK 4, GLib, WebKitGTK 6, libsoup and the Tor runtime. It deliberately does **not** ship, and takes from the host instead:
+
+- the **C library** (glibc) — see the floor below;
+- the **graphics driver stack**: Mesa (`libGL`, `libEGL`), `libgbm`, `libdrm` and Vulkan (`libvulkan`).
+
+Those are exactly the components a browser should not second-guess: they are matched to the user's GPU, kernel driver and display server, not to the application. Every desktop Linux installation has them; minimal containers and server installs usually do not.
+
+`scripts/test-appimage-containers.sh` installs this minimal runtime set in each test image before running the AppImage, so the check measures what NiOn ships rather than the absence of a desktop.
+
 ## Supported distributions and the C library floor
 
 NiOn deliberately does **not** replace the system C library: shipping another libc is not something a browser should do. It does ship GTK, GLib and WebKitGTK, and those bundles carry the `GLIBC_*` symbol versions of whatever machine built them.
