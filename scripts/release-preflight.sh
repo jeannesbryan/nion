@@ -181,11 +181,14 @@ fi
 printf '\n== C library compatibility floor ==\n'
 [[ -n "$NION_GLIBC_FLOOR" ]] && pass "supported glibc floor from manifest: $NION_GLIBC_FLOOR" || failmsg 'glibc floor missing from the release manifest'
 if [[ -x "$appimage" ]]; then
-  if ./scripts/check-glibc-floor.sh "$appimage" --quiet; then
+  # Report the checker's own output rather than asserting a cause here: a
+  # non-zero exit can mean "above the floor" or "could not read the artifact",
+  # and a fixed message would name the wrong one.
+  if glibc_output="$(./scripts/check-glibc-floor.sh "$appimage" --list 2>&1)"; then
     pass "AppImage requires no glibc newer than $NION_GLIBC_FLOOR"
   else
-    failmsg "AppImage requires a glibc newer than the supported floor $NION_GLIBC_FLOOR"
-    ./scripts/check-glibc-floor.sh "$appimage" --list >&2 || true
+    failmsg "glibc floor check failed for $appimage"
+    printf '%s\n' "$glibc_output" >&2
   fi
 else
   warn 'AppImage not built yet; glibc floor not verified against an artifact'

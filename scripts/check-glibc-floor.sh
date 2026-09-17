@@ -77,8 +77,13 @@ if [[ -d "$TARGET" ]]; then
   SCAN="$TARGET"
 elif [[ -f "$TARGET" ]]; then
   # An AppImage is a SquashFS; extract it without FUSE.
+  #
+  # Resolve to an absolute path first: extraction runs from a temporary
+  # directory, so a relative target such as dist/NiOn-2.2.0-x86_64.AppImage
+  # would no longer resolve and the extraction would look like a corrupt file.
+  TARGET_ABS="$(cd "$(dirname "$TARGET")" && pwd)/$(basename "$TARGET")"
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/nion-glibc.XXXXXX")"
-  ( cd "$WORK" && APPIMAGE_EXTRACT_AND_RUN=1 "$TARGET" --appimage-extract >/dev/null 2>&1 ) || {
+  ( cd "$WORK" && APPIMAGE_EXTRACT_AND_RUN=1 "$TARGET_ABS" --appimage-extract >/dev/null 2>&1 ) || {
     echo "Could not extract $TARGET (expected an AppImage or a directory)" >&2
     exit 1
   }

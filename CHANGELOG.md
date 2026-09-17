@@ -21,6 +21,11 @@
 - **CI verifies its own environment:** the release workflow refuses to run on a runner whose glibc is newer than the supported floor, since that would silently produce an unsupported AppImage.
 - **Release baseline now describes reality:** the documented baseline is the pinned build environment — GTK 4.14.5, WebKitGTK 2.52.6, GLib 2.80.0, glibc 2.39 (Ubuntu 24.04 LTS / Linux Mint 22.x) — instead of version numbers that no shipped artifact was ever built against.
 
+### Dependencies
+
+- **Tor runtime updated to the current Tor Browser release:** Expert Bundle 15.0.19 → **15.0.23**, Tor daemon 0.4.9.11 → **0.4.9.12**. Both are downloaded from the Tor Project and verified against the pinned signing key (`EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`) at build time. The bundle still ships `lyrebird` and `conjure-client`, so all four bridge transports remain available.
+- The GTK/GLib/WebKitGTK/libsoup versions are unchanged by design: they come from the pinned release environment (GTK 4.14.5, WebKitGTK 2.52.6, GLib 2.80.0) so that the AppImage keeps working on systems at the documented glibc 2.39 floor. Chasing newer upstream GNOME/WebKit releases here would mean dropping the floor.
+
 ### Bug fixes and maintenance
 
 - **The repository can be built from a clean clone again.** `.gitignore` ignored all of `/release/`, which swallowed `release/manifest/` — the files `meson.build` and every script read their version from. A fresh clone could not configure, fetch Tor, or produce a source archive. The rule now ignores only the generated archives.

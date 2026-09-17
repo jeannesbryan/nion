@@ -3,7 +3,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/manifest.sh"
 APPIMAGE="${1:-$ROOT/dist/$NION_APPIMAGE_BASENAME}"
-[[ -x "$APPIMAGE" ]] || { echo "AppImage not found/executable: $APPIMAGE" >&2; exit 1; }
+[[ -e "$APPIMAGE" ]] || { echo "AppImage not found: $APPIMAGE" >&2; exit 1; }
+# Resolve to an absolute path: a container bind mount needs one. Given a
+# relative path, podman treats "dist/NiOn-....AppImage" as a *named volume* and
+# fails with "names must match [a-zA-Z0-9][a-zA-Z0-9_.-]*", which says nothing
+# about the real problem.
+APPIMAGE="$(cd "$(dirname "$APPIMAGE")" && pwd)/$(basename "$APPIMAGE")"
+[[ -f "$APPIMAGE" ]] || { echo "Not a file: $APPIMAGE" >&2; exit 1; }
 
 # Cross-distribution smoke test (wired into release preflight in 2.2.0).
 #
