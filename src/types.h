@@ -51,6 +51,10 @@
 #define NION_MAX_PREFERRED_ONION_FILE_BYTES (1024 * 1024)
 #define NION_MAX_PREFERRED_ONION_ENTRIES 2048
 #define NION_PREFERRED_ONION_FORMAT 1
+#define NION_MAX_BRIDGE_FILE_BYTES (256 * 1024)
+#define NION_MAX_BRIDGES 64
+#define NION_MAX_BRIDGE_LINE_CHARS 512
+#define NION_BRIDGE_FORMAT 1
 #define NION_CONTENT_FILTER_ID "nion-lightweight-v1"
 #define NION_ZOOM_MIN_PERCENT 50
 #define NION_ZOOM_MAX_PERCENT 200
@@ -310,6 +314,7 @@ struct _NionApp {
     gchar *content_blocking_file;
     gchar *autoplay_file;
     gchar *preferred_onion_file;
+    gchar *bridge_file;
     gchar *content_filter_store_dir;
     GPtrArray *bookmarks;
     GHashTable *site_zoom;
@@ -318,6 +323,17 @@ struct _NionApp {
     GHashTable *content_blocking_disabled;
     GHashTable *autoplay_allowed_sites;
     GHashTable *preferred_onion;   /* site key -> .onion URI string */
+    /* Censorship circumvention (v2.2). Bridge mode is opt-in and fail-closed:
+     * when it is enabled the bundled Tor must start with UseBridges 1 and the
+     * bundled pluggable transports, or NiOn refuses to start Tor at all rather
+     * than silently connecting without the bridges the user asked for. */
+    gboolean bridges_enabled;
+    GPtrArray *bridges;            /* validated bridge lines, file order */
+    GtkWidget *bridges_window;
+    GtkWidget *bridges_enable_check;
+    GtkWidget *bridges_text_view;
+    GtkWidget *bridges_transport_label;
+    GtkWidget *bridges_error_label;
     GHashTable *temporary_permissions;
     WebKitUserContentFilterStore *content_filter_store;
     WebKitUserContentFilter *content_filter;

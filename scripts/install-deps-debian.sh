@@ -3,9 +3,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/manifest.sh"
 
-sudo apt update
-sudo apt install -y \
+# Works on a normal desktop (sudo) and inside the pinned release-build
+# container, where the script already runs as root and sudo may not exist.
+if [[ "$(id -u)" -eq 0 ]]; then
+  SUDO=()
+else
+  SUDO=(sudo)
+fi
+
+"${SUDO[@]}" apt-get update
+"${SUDO[@]}" apt-get install -y \
   build-essential \
+  python3 \
   meson \
   ninja-build \
   pkg-config \

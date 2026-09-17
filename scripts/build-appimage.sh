@@ -171,6 +171,16 @@ if command -v appstreamcli >/dev/null 2>&1; then
   appstreamcli validate "$APPDIR/usr/share/metainfo/io.github.jeannesbryan.Nion.metainfo.xml"
 fi
 
+# Record the C library version the bundled libraries were actually built
+# against, so AppRun can refuse to start on an older system with an explanation
+# instead of a screenful of loader errors.
+./scripts/check-glibc-floor.sh "$APPDIR" \
+  --write-required "$APPDIR/usr/lib/nion/GLIBC-REQUIRED"
+{
+  printf 'GlibcFloor=%s\n' "$NION_GLIBC_FLOOR"
+  printf 'GlibcRequired=%s\n' "$(tr -d '[:space:]' < "$APPDIR/usr/lib/nion/GLIBC-REQUIRED")"
+} >> "$APPDIR/usr/lib/nion/BUILD-INFO"
+
 # AppDir-level smoke test before creating SquashFS.
 "$APPDIR/AppRun" --appimage-diagnose
 
@@ -191,6 +201,10 @@ chmod +x "$OUT"
 # FUSE-independent packaged diagnostic. This proves the generated SquashFS can
 # extract and its bundled loader paths resolve on the build host.
 APPIMAGE_EXTRACT_AND_RUN=1 "$OUT" --appimage-diagnose
+
+# Re-check the finished artifact (not just the AppDir): everything that ends up
+# inside the SquashFS must stay within the supported glibc floor.
+./scripts/check-glibc-floor.sh "$OUT"
 
 printf '\nCreated:\n  %s\n  %s.sha256\n' "$OUT" "$OUT"
 printf 'Profile remains outside AppImage at: %s/nion\n' "${XDG_DATA_HOME:-$HOME/.local/share}"

@@ -8,6 +8,7 @@
 #include "config.h"
 #include "tor-core.h"
 #include "types.h"
+#include "bridge.h"
 #include "network.h"
 #include "util.h"
 #include <glib.h>
@@ -571,13 +572,37 @@ gboolean nion_start_tor(NionApp *app)
 
     GError *error = NULL;
     gchar *torrc_path = g_build_filename(app->tor_dir, "torrc", NULL);
-    const gchar *torrc =
+
+    /* Bridge mode is fail-closed (v2.2): when the user asked for bridges and
+     * the configuration cannot be honoured exactly, Tor must not be started at
+     * all. Starting it without the bridges would silently fall back to a
+     * straight Tor connection in exactly the censored network the user is
+     * trying to get around. */
+    gchar *bridge_error = NULL;
+    gchar *bridge_fragment = nion_bridge_torrc_fragment(app, &bridge_error);
+    if (!bridge_fragment) {
+        gchar *message = g_strdup_printf("Bridge configuration refused: %s",
+                                         bridge_error ? bridge_error
+                                                      : "invalid bridge configuration");
+        nion_store_tor_log(app, message);
+        nion_set_tor_error(app, message);
+        g_free(message);
+        g_free(bridge_error);
+        g_free(torrc_path);
+        return FALSE;
+    }
+
+    /* WarnUnsafeSocks was removed from this torrc: Tor 0.4.9 reports it as an
+     * obsolete option and skips it, so it only added log noise. SafeSocks (the
+     * actual protection) stays. */
+    const gchar *base_torrc =
         "# NiOn private Tor configuration\n"
         "ClientOnly 1\n"
         "SafeSocks 1\n"
-        "WarnUnsafeSocks 1\n"
         "ClientRejectInternalAddresses 1\n"
         "ClientDNSRejectInternalAddresses 1\n";
+    gchar *torrc = g_strconcat(base_torrc, bridge_fragment, NULL);
+    g_free(bridge_fragment);
 
     if (!g_file_set_contents(torrc_path, torrc, -1, &error)) {
         gchar *message = g_strdup_printf("Could not create NiOn torrc: %s",
@@ -586,9 +611,11 @@ gboolean nion_start_tor(NionApp *app)
         nion_set_tor_error(app, message);
         g_free(message);
         g_clear_error(&error);
+        g_free(torrc);
         g_free(torrc_path);
         return FALSE;
     }
+    g_free(torrc);
     g_chmod(torrc_path, 0600);
 
     gchar *socks_endpoint = g_strdup_printf("%s:%u", NION_TOR_HOST, app->tor_socks_port);
@@ -620,6 +647,9 @@ gboolean nion_start_tor(NionApp *app)
     }
 
     g_printerr("[NiOn] Starting bundled Tor: %s\n", app->tor_binary_path);
+    if (nion_bridges_active(app))
+        g_printerr("[NiOn] Bridge mode: UseBridges 1 with %u configured bridge line(s)\n",
+                   app->bridges->len);
     g_printerr("[NiOn] Tor data: %s\n", app->tor_dir);
     g_printerr("[NiOn] Tor config: %s\n", torrc_path);
     g_printerr("[NiOn] SOCKS: %s:%u\n", NION_TOR_HOST, app->tor_socks_port);

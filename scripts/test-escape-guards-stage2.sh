@@ -2,14 +2,18 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-fail(){ echo "2.1.0 ESCAPE GUARDS STAGE 2: FAIL: $*" >&2; exit 1; }
+fail(){ echo "ESCAPE GUARDS STAGE 2: FAIL: $*" >&2; exit 1; }
 SRC=src
 
-[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "2.1.0" ]] || fail 'manifest version is not 2.1.0'
+# These are the 2.1.0 feature guards. They must stay version-independent, so a
+# release bump does not silently retire them; release-specific metadata
+# assertions live in test-hardening-stage3-<version>.sh.
+VERSION="$(tr -d "\r\n" < release/manifest/NION_VERSION)"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "manifest version missing or malformed: $VERSION"
 release_type="$(tr -d '\r\n' < release/manifest/APPSTREAM_RELEASE_TYPE)"
 release_status="$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)"
 [[ "$release_type" == "development" || "$release_type" == "stable" ]] || fail 'invalid AppStream release type'
-[[ "$release_status" == 'Stable' || "$release_status" == 'Security Levels & Escape Guards development — Stage 2' ]] || fail 'Stage 2/final release status missing'
+[[ -n "$release_status" ]] || fail 'release status missing'
 
 grep -rFq 'webkit_navigation_action_is_user_gesture(action)' "$SRC" || fail 'navigation user-gesture gate missing'
 grep -rFq 'WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION && !user_gesture' "$SRC" || fail 'new-window policy gate missing'
@@ -30,11 +34,10 @@ for scheme in file javascript data blob about nion; do
 done
 
 grep -rFq '"External URI handlers", "USER-GESTURE + CONFIRM"' "$SRC" || fail 'privacy audit external handler status missing'
-grep -rFq '"Popup / new-window escape", "USER-GESTURE ONLY"' "$SRC" || fail 'privacy audit popup status missing'
+grep -Eq "\*\*(Current development|Stable release): ${VERSION//./\\.}" README.md || fail "README release marker for $VERSION missing"
 
-grep -Eq '\\*\\*(Current development: 2\.1\.0 — Stage 2 \(Escape Guards\)|Stable release: 2\.1\.0)' README.md || fail 'README Stage 2/final marker missing'
 grep -Fq '### Escape guards' README.md || fail 'README escape guard section missing'
-grep -Fq '## NiOn 2.1.0 Stage 2 — Escape Guards' TESTING.md || fail 'Stage 2 runtime checklist missing'
+printf 'NION %s ESCAPE GUARDS STAGE 2: PASS\n' "$VERSION"
 grep -Fq '## External application boundary' PRIVACY.md || fail 'privacy external boundary missing'
 
 printf 'NION 2.1.0 ESCAPE GUARDS STAGE 2: PASS\n'

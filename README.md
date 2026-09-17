@@ -2,7 +2,7 @@
 
 NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens both clearnet and Tor v3 `.onion` sites through its own bundled Tor runtime and is designed to fail closed rather than silently fall back to a direct connection.
 
-**Stable release: 2.1.0**  
+**Stable release: 2.2.0**  
 **Project focus: modular architecture, maintenance, compatibility, privacy/security fixes.**  
 **Platform: GNU/Linux x86_64 AppImage**
 
@@ -156,6 +156,19 @@ The toolbar Site Information control opens a compact, scrollable transient windo
 
 When an HTTPS clearnet page advertises a valid Tor v3 Onion-Location, NiOn shows an **Onion** badge. Selecting it opens the onion address inside NiOn.
 
+### Bridges (censorship circumvention)
+
+Networks that block Tor outright can be reached through bridges — unlisted Tor relays that disguise the traffic. NiOn bundles the pluggable transports already and adds the configuration on top (menu ☰ → **Bridges (Censorship Circumvention)…**):
+
+- paste bridge lines one per line; NiOn supports every transport its verified Tor Expert Bundle ships — `obfs4`, `webtunnel`, `meek_lite` (via `lyrebird`) and `conjure`;
+- each transport is validated and its bundled binary located **before** the configuration is stored, so problems are reported in the dialog rather than as a broken Tor start-up;
+- **fail-closed:** with bridge mode enabled, if the list is empty, a line is malformed, or a required transport is missing, NiOn refuses to start Tor altogether. It never quietly connects without the bridges you asked for;
+- bridge lines are strictly validated (known transport, no control characters, no torrc keywords), so a stored line cannot inject an extra Tor directive;
+- changing the bridge set restarts Tor through the normal fail-closed path without touching your browsing identity — cookies, logins and per-site rules survive, unlike **New Identity**;
+- settings persist in `bridges.ini` (0600, size- and entry-capped, quarantined if corrupt) and Private Windows inherit them.
+
+NiOn adds no Tor control-port surface for this: bridges are pure torrc.
+
 ### Audio
 
 - Per-tab audio activity indicator.
@@ -215,13 +228,16 @@ See [PRIVACY.md](PRIVACY.md) for the threat model and limitations.
 
 ## Release dependency baseline
 
-NiOn keeps compatibility floors separate from the stable toolchain baseline used for release validation:
+NiOn keeps compatibility floors separate from the release baseline. The release baseline is not an aspiration — it is the exact environment the AppImage is built in, so the artifact and its documentation cannot drift apart:
 
-- minimum GTK: 4.10; stable baseline: GTK 4.22.4;
-- minimum WebKitGTK: 2.40; stable baseline: WebKitGTK 2.52.5;
-- stable GLib baseline: 2.88.2.
+- minimum GTK: 4.10; release baseline: GTK 4.14.5 (Ubuntu 24.04 LTS);
+- minimum WebKitGTK: 2.40; release baseline: WebKitGTK 2.52.6;
+- release baseline GLib: 2.80.0;
+- supported C library floor: **glibc 2.39** (Ubuntu 24.04 LTS / Linux Mint 22.x).
 
-The AppImage records the actual GTK/WebKitGTK/GLib versions present on the build host in its bundled `BUILD-INFO`; these baseline values do not artificially raise NiOn's minimum API requirements.
+NiOn ships its own GTK, GLib and WebKitGTK but deliberately uses the system C library, so releases are built in a container pinned to that floor (`./scripts/build-release-container.sh`). `scripts/check-glibc-floor.sh` fails the build if any bundled library requires a newer libc, and the AppImage refuses to start on an older system with an explanation instead of raw loader errors.
+
+The AppImage also records the actual GTK/WebKitGTK/GLib/glibc versions of its build host in the bundled `BUILD-INFO`.
 
 ## Strengths
 
@@ -273,7 +289,7 @@ Normal NiOn data lives outside the AppImage:
 
 ```text
 ~/.local/share/nion/   cookies, session, downloads, bookmarks, Tor state, WebKit data
-~/.config/nion/        preferences, per-site zoom, JavaScript rules, content-blocking exceptions
+~/.config/nion/        preferences, per-site zoom, JavaScript rules, content-blocking exceptions, bridges
 ~/.cache/nion/         WebKit cache and compiled content-filter cache
 ```
 
@@ -284,14 +300,14 @@ Private Window data does not use these normal persistence paths for private webs
 ## Run the AppImage
 
 ```bash
-chmod +x NiOn-2.1.0-x86_64.AppImage
-./NiOn-2.1.0-x86_64.AppImage
+chmod +x NiOn-2.2.0-x86_64.AppImage
+./NiOn-2.2.0-x86_64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-2.1.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-2.2.0-x86_64.AppImage
 ```
 
 ## Build from source
@@ -314,8 +330,8 @@ Build the production AppImage with:
 Expected output:
 
 ```text
-dist/NiOn-2.1.0-x86_64.AppImage
-dist/NiOn-2.1.0-x86_64.AppImage.sha256
+dist/NiOn-2.2.0-x86_64.AppImage
+dist/NiOn-2.2.0-x86_64.AppImage.sha256
 ```
 
 See [BUILDING.md](BUILDING.md) for the complete build/release procedure and [TESTING.md](TESTING.md) for runtime validation.

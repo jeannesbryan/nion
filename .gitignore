@@ -22,8 +22,9 @@ compile_commands.json
 /runtime/tor/
 /.tools/
 
-# Generated release archives
-/release/
+# Generated release archives (release/manifest/ is source, must stay tracked)
+/release/*.tar.gz
+/release/*.tar.gz.sha256
 /NiOn-*.tar.gz
 /NiOn-*.tar.gz.sha256
 /NiOn-*.zip

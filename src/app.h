@@ -32,6 +32,13 @@ void action_exit(GSimpleAction *action, GVariant *parameter, gpointer user_data)
  * sync. Safe to trigger from a Private Window (routes to the owner). */
 void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
+/* Bridge configuration change (v2.2): stop the bundled Tor and start it again
+ * through the fail-closed path so a new UseBridges/ClientTransportPlugin set
+ * takes effect. Register this as NionBridgeCallbacks.restart_tor; it never
+ * purges the browsing identity, because bridges are a routing change only.
+ * Safe to call from a Private Window (routes to the owner). */
+void nion_restart_tor_for_bridge_change(NionApp *app);
+
 /* Window close-request handler (connected by the UI chrome builder in
  * main.c / ui.c for both normal and private windows). */
 gboolean on_window_close_request(GtkWindow *window, gpointer user_data);

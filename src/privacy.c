@@ -65,7 +65,14 @@ void nion_apply_privacy_settings(NionApp *app, WebKitSettings *settings)
     webkit_settings_set_allow_file_access_from_file_urls(settings, FALSE);
     webkit_settings_set_allow_universal_access_from_file_urls(settings, FALSE);
 
+    /* Hyperlink auditing (<a ping>) is a per-page beacon to a third party. It
+     * used to be switchable; from WebKitGTK 2.52 the setter is deprecated and
+     * does nothing (the feature can no longer be re-enabled), so calling it
+     * only produced a deprecation warning on every tab. Keep forcing it off on
+     * every WebKit that still honours the switch. */
+#if !WEBKIT_CHECK_VERSION(2, 52, 0)
     webkit_settings_set_enable_hyperlink_auditing(settings, FALSE);
+#endif
     webkit_settings_set_enable_developer_extras(settings, FALSE);
     webkit_settings_set_enable_encrypted_media(settings, FALSE);
     nion_set_boolean_setting_if_present(settings, "enable-plugins", FALSE);

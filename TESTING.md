@@ -1,8 +1,32 @@
 # NiOn Testing
 
+## NiOn 2.2.0 — bridges and the C library floor
+
+Two things in 2.2.0 need live validation beyond the static suite.
+
+### Bridges (censorship circumvention)
+
+1. Menu ☰ → **Bridges (Censorship Circumvention)…** lists the bundled transports with a ✓ next to each one the build actually ships.
+2. Enable bridge mode with an empty list and press **Save & Reconnect**: the dialog must refuse it and explain that NiOn will not start Tor without the bridges you asked for.
+3. Paste a syntactically valid but unreachable line (`obfs4 192.0.2.1:443 <40-hex-fingerprint> cert=… iat-mode=0`) and save. `~/.local/share/nion/tor/torrc` must contain `UseBridges 1`, one `ClientTransportPlugin` per used transport and your `Bridge` line. Tor must log `Starting with guard context "bridges"`, reach `Bootstrapped 2% (conn_done_pt)` (proving the bundled transport launched), then never bootstrap — and navigation must stay blocked.
+4. Paste a line with a transport NiOn does not bundle (`snowflake 192.0.2.1:1`): the dialog must refuse it.
+5. Paste a line that tries to smuggle a directive (`obfs4 … cert=AA\nSocksPort 9999`): on the next start the file must be quarantined as `bridges.ini.corrupt-*`, no injected directive may appear in the generated torrc, and Tor must start normally **without** bridges rather than with a partial set.
+6. Disable bridge mode: Tor restarts, cookies and logins survive (this is not New Identity).
+7. With real bridges from the Tor Project, confirm bootstrap to 100% and that a clearnet site plus a `.onion` site load.
+
+### C library floor
+
+```bash
+./scripts/check-glibc-floor.sh dist/NiOn-2.2.0-x86_64.AppImage   # must PASS
+./scripts/test-appimage-containers.sh                            # must PASS on all three images
+```
+
+8. Run the AppImage on the oldest supported system (Ubuntu 24.04 LTS / Linux Mint 22.x): it must start normally. The diagnostic must report the required glibc.
+9. On a system **below** the floor, AppRun must print the "NiOn cannot start on this system" explanation with both versions instead of raw loader errors.
+
 ## NiOn 2.1.0 final release validation
 
-Before publishing `v2.0.0`, run the full static preflight and then validate the final native/AppImage build on the stable release toolchain when practical (GTK 4.22.4, WebKitGTK 2.52.5, GLib 2.88.2). A newer stable patch release is acceptable; GTK 4.23.x and GLib 2.89.x are development branches and should be treated as compatibility-testing environments rather than the preferred release baseline.
+Before publishing a release, run the full static preflight and then validate the final native/AppImage build on the pinned release environment recorded in `release/manifest/` (GTK 4.14.5, WebKitGTK 2.52.6, GLib 2.80.0, glibc 2.39). A newer host is acceptable only through `./scripts/build-release-container.sh`, which is what `check-glibc-floor.sh` enforces.
 
 Final live smoke test:
 

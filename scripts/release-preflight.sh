@@ -70,7 +70,11 @@ else
 fi
 
 printf '\n== Privacy/fail-closed invariants ==\n'
-if grep -Rqs --exclude='*.md' --exclude='release-preflight.sh' 'ControlPort' src scripts packaging; then
+# Look for a real control-port configuration (directive with a value, CLI flag,
+# or auth directive). The bare word also appears in the bridge validator's
+# blocklist of forbidden torrc keywords, which is not a control-port surface.
+if grep -REqs --exclude='*.md' --exclude='release-preflight.sh' --exclude='test-*.sh' --exclude='bridge.c' \
+     'ControlPort [0-9a-zA-Z]|--ControlPort|HashedControlPassword|CookieAuthentication' src scripts packaging; then
   failmsg 'unexpected Tor ControlPort code remains'
 else
   pass 'no Tor ControlPort runtime code'
@@ -112,7 +116,9 @@ for test in \
   scripts/test-hardening-1.6.0.sh \
   scripts/test-security-levels-stage1.sh \
   scripts/test-escape-guards-stage2.sh \
-  scripts/test-hardening-stage3-2.1.0.sh; do
+  scripts/test-hardening-stage3-2.1.0.sh \
+  scripts/test-hardening-stage3-2.2.0.sh \
+  scripts/test-bridges-stage1.sh; do
   if "$test" >/dev/null; then pass "$(basename "$test")"; else failmsg "$(basename "$test") failed"; fi
 done
 
@@ -170,6 +176,38 @@ if [[ -x "$appimage" ]]; then
   fi
 else
   warn "$appimage not built yet; run ./scripts/build-appimage.sh"
+fi
+
+printf '\n== C library compatibility floor ==\n'
+[[ -n "$NION_GLIBC_FLOOR" ]] && pass "supported glibc floor from manifest: $NION_GLIBC_FLOOR" || failmsg 'glibc floor missing from the release manifest'
+if [[ -x "$appimage" ]]; then
+  if ./scripts/check-glibc-floor.sh "$appimage" --quiet; then
+    pass "AppImage requires no glibc newer than $NION_GLIBC_FLOOR"
+  else
+    failmsg "AppImage requires a glibc newer than the supported floor $NION_GLIBC_FLOOR"
+    ./scripts/check-glibc-floor.sh "$appimage" --list >&2 || true
+  fi
+else
+  warn 'AppImage not built yet; glibc floor not verified against an artifact'
+fi
+
+printf '\n== Cross-distribution container smoke test ==\n'
+if [[ ! -x "$appimage" ]]; then
+  if [[ "${NION_REQUIRE_CONTAINER_TEST:-0}" == '1' ]]; then
+    failmsg "$appimage missing; container smoke test cannot run"
+  else
+    warn 'AppImage not built yet; container smoke test skipped'
+  fi
+elif command -v podman >/dev/null 2>&1 || command -v docker >/dev/null 2>&1; then
+  if ./scripts/test-appimage-containers.sh "$appimage"; then
+    pass 'AppImage runs on the supported distribution containers'
+  else
+    failmsg 'AppImage container smoke test failed'
+  fi
+elif [[ "${NION_REQUIRE_CONTAINER_TEST:-0}" == '1' ]]; then
+  failmsg 'a container engine (podman or docker) is required but was not found'
+else
+  warn 'podman/docker unavailable; container smoke test skipped (NION_REQUIRE_CONTAINER_TEST=1 makes this fatal)'
 fi
 
 printf '\n== Existing profile permissions ==\n'

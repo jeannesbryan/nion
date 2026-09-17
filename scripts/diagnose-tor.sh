@@ -43,7 +43,6 @@ exec "$TOR_BINARY" \
   --DataDirectory "$DIAG_DIR" \
   --SocksPort "127.0.0.1:$PORT" \
   --SafeSocks 1 \
-  --WarnUnsafeSocks 1 \
   --ClientRejectInternalAddresses 1 \
   --ClientDNSRejectInternalAddresses 1 \
   --Log "notice stdout"

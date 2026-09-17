@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.2.0 — Stable
+
+### Censorship circumvention (bridges)
+
+- **Bridges / pluggable transports:** a new **Bridges (Censorship Circumvention)…** dialog (menu ☰) reaches the Tor network through bridges — unlisted relays that disguise Tor traffic — for networks where Tor is blocked outright. NiOn bundles the pluggable transports already; this release adds the configuration on top.
+- **Every transport the verified bundle ships:** `obfs4`, `webtunnel` and `meek_lite` (via `lyrebird`) plus `conjure` (via `conjure-client`). The dialog lists which ones the running build actually provides.
+- **Fail-closed:** with bridge mode enabled, an empty list, a malformed line, or a missing transport makes NiOn refuse to start Tor altogether. It never silently falls back to a bridge-less Tor connection — the exact outcome a user in a censored network is trying to avoid.
+- **Validated bridge lines:** a line must name a bundled transport and is rejected outright if it contains control characters or torrc keywords, so a stored line cannot inject an extra Tor directive into NiOn's torrc.
+- **No new attack surface:** bridges are pure torrc; NiOn still opens no Tor control port.
+- **Routing change, not identity change:** applying a new bridge set restarts Tor through the normal fail-closed path while keeping cookies, logins and per-site rules — unlike **New Identity**, which is deliberately still available next to it.
+- Bridge settings persist in `bridges.ini` (0600, size- and entry-capped, corrupt state quarantined and never partially applied); Private Windows inherit them and never write them.
+
+### Release engineering
+
+- **Supported C library floor is now enforced, not just documented:** `scripts/check-glibc-floor.sh` reads the required `GLIBC_*` symbol versions out of every ELF in the AppDir and in the finished AppImage, and fails the build when the requirement exceeds `release/manifest/GLIBC_FLOOR` (2.39). This turns the 2.1.0 `GLIBC_2.43 not found` loader failure into a build-time error.
+- **The AppImage explains itself instead of dumping loader errors:** `AppRun` records the required glibc in `usr/lib/nion/GLIBC-REQUIRED` and, on an older system, prints the two versions plus concrete options instead of one raw loader error per bundled library.
+- **Cross-distribution smoke test is now wired in:** `scripts/test-appimage-containers.sh` extracts and starts the AppImage inside the pinned floor image (Ubuntu 24.04), Debian stable and Fedora. It runs from `release-preflight.sh` and, with `NION_REQUIRE_CONTAINER_TEST=1`, from CI where it is mandatory. The check existed since 2.1.0 but was never called — which is why the broken artifact shipped.
+- **Pinned container release builds:** `scripts/build-release-container.sh` builds the AppImage inside the pinned release environment (`ubuntu:24.04`), verifies the image's glibc is at or below the floor *before* building, and re-checks the artifact afterwards. Works with rootless `podman` or `docker`.
+- **CI verifies its own environment:** the release workflow refuses to run on a runner whose glibc is newer than the supported floor, since that would silently produce an unsupported AppImage.
+- **Release baseline now describes reality:** the documented baseline is the pinned build environment — GTK 4.14.5, WebKitGTK 2.52.6, GLib 2.80.0, glibc 2.39 (Ubuntu 24.04 LTS / Linux Mint 22.x) — instead of version numbers that no shipped artifact was ever built against.
+
+### Bug fixes and maintenance
+
+- **The repository can be built from a clean clone again.** `.gitignore` ignored all of `/release/`, which swallowed `release/manifest/` — the files `meson.build` and every script read their version from. A fresh clone could not configure, fetch Tor, or produce a source archive. The rule now ignores only the generated archives.
+- **Corrupt configuration no longer reaches Tor:** a bridge file that fails validation is quarantined and bridge mode falls back to disabled-with-no-bridges rather than starting with a partial set.
+- Removed the obsolete `WarnUnsafeSocks 1` option from the generated torrc **and** from `scripts/diagnose-tor.sh`; Tor 0.4.9 reports it as obsolete and skips it, so it only added log noise. `SafeSocks` — the actual protection — remains.
+- Replaced the deprecated `gtk_css_provider_load_from_data()` with `gtk_css_provider_load_from_string()` where GTK ≥ 4.12 provides it, keeping the GTK 4.10 compatibility path.
+- Stopped calling the deprecated, no-op `webkit_settings_set_enable_hyperlink_auditing()`, which produced a warning on every tab in WebKitGTK ≥ 2.52; the call is kept for older WebKit where it still honours the setting.
+- The About dialog now reports bridge mode, the C library floor, and the dependency baseline.
+- The 2.1.0 feature regression suites no longer pin the release version, so a version bump cannot silently retire them; release-specific metadata assertions live in `test-hardening-stage3-<version>.sh`.
+- Added `scripts/test-bridges-stage1.sh` and `scripts/test-hardening-stage3-2.2.0.sh`. The bridge suite drives the real validator and torrc builder through a new in-binary self-check (`NION_BRIDGE_SELFCHECK=1`) instead of grepping for them, and asserts behaviourally that the generated torrc contains no control-port or injected SOCKS directive.
+
+# Changelog
+
 ## 2.1.0 — Stable
 
 ### Privacy & anonymity

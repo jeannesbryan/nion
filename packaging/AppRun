@@ -23,6 +23,60 @@ if [[ -f "$SHIM" ]]; then
   export LD_PRELOAD="$SHIM${LD_PRELOAD:+:$LD_PRELOAD}"
 fi
 
+# --- Host C library guard ----------------------------------------------------
+# NiOn bundles GTK, GLib and WebKitGTK but deliberately uses the system C
+# library. The bundled libraries carry the GLIBC_* symbol versions of the build
+# host, so an artifact produced on a newer distribution than the one it claims
+# to support cannot start on an older one. Detect that here and explain it,
+# instead of letting the dynamic loader print one raw error per library.
+nion_version_ge() { # $1 >= $2 ?
+  awk -v a="$1" -v b="$2" 'BEGIN{
+    n=split(a,x,"."); m=split(b,y,".");
+    for (i=1;i<=3;i++) { xi=(i<=n?x[i]:0)+0; yi=(i<=m?y[i]:0)+0;
+      if (xi>yi) exit 0; if (xi<yi) exit 1; }
+    exit 0 }'
+}
+
+nion_required_glibc=""
+if [[ -r "$HERE/usr/lib/nion/GLIBC-REQUIRED" ]]; then
+  nion_required_glibc="$(tr -d '[:space:]' < "$HERE/usr/lib/nion/GLIBC-REQUIRED")"
+fi
+
+nion_host_glibc=""
+if command -v getconf >/dev/null 2>&1; then
+  nion_host_glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+fi
+if [[ -z "$nion_host_glibc" ]] && command -v ldd >/dev/null 2>&1; then
+  nion_host_glibc="$(ldd --version 2>/dev/null | head -n1 | sed -n 's/.*[[:space:]]\([0-9][0-9.]*\)$/\1/p')"
+fi
+
+if [[ -n "$nion_required_glibc" && -n "$nion_host_glibc" ]] && \
+   command -v awk >/dev/null 2>&1 && \
+   ! nion_version_ge "$nion_host_glibc" "$nion_required_glibc"; then
+  cat >&2 <<MSG
+NiOn cannot start on this system.
+
+  This build needs   glibc $nion_required_glibc   (or newer)
+  This system has    glibc $nion_host_glibc
+
+NiOn ships its own GTK, GLib and WebKitGTK, but it uses the system C library on
+purpose: swapping out libc is not something a browser should do. The bundled
+libraries were built against glibc $nion_required_glibc, so this system must be
+at least that new.
+
+What you can do:
+  * use a NiOn build made for this system, or upgrade to a distribution with
+    glibc $nion_required_glibc or newer; or
+  * build NiOn natively here, so it uses this machine's own libraries:
+        meson setup build --buildtype=release
+        meson compile -C build
+        ./build/nion
+  * or report it (with the two versions above) at
+        $NION_REPOSITORY_URL/issues
+MSG
+  exit 1
+fi
+
 if [[ "${1:-}" == "--appimage-diagnose" ]]; then
   echo "NiOn AppImage diagnostics"
   echo "APPDIR=$APPDIR"
@@ -31,6 +85,7 @@ if [[ "${1:-}" == "--appimage-diagnose" ]]; then
   echo "Cache=${XDG_CACHE_HOME:-$HOME/.cache}/nion"
   echo "WebKit exec=$NION_WEBKIT_EXEC_DIR"
   echo "Tor=$NION_TOR_BINARY"
+  echo "Required glibc=${nion_required_glibc:-unknown} (host glibc=${nion_host_glibc:-unknown})"
   echo
 
   for host_tool in bwrap xdg-dbus-proxy; do

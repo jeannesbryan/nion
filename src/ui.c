@@ -17,6 +17,7 @@
 #include "bookmarks.h"
 #include "downloads.h"
 #include "settings.h"
+#include "bridge.h"
 #include "site-data.h"
 #include "app.h"
 #include "ui.h"
@@ -1781,6 +1782,10 @@ void action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data
     g_signal_connect(dialog, "activate-link", G_CALLBACK(on_about_activate_link), app);
 
     const gchar *package_mode = g_getenv("APPIMAGE") ? "AppImage" : "development/native";
+    gchar *bridge_info = nion_bridges_active(app)
+        ? g_strdup_printf("enabled (%u bridge line%s)", app->bridges->len,
+                          app->bridges->len == 1 ? "" : "s")
+        : g_strdup("disabled");
     gchar *system_info = g_strdup_printf(
         "NiOn version: %s\n"
         "Author: Jeannes Bryan\n"
@@ -1790,7 +1795,8 @@ void action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data
         "Status: %s\n\n"
         "Runtime\n"
         "Tor status: %s\n"
-        "SOCKS: 127.0.0.1:%u\n\n"
+        "SOCKS: 127.0.0.1:%u\n"
+        "Bridge mode: %s\n\n"
         "Dependencies\n"
         "GTK: %u.%u.%u\n"
         "WebKitGTK: %u.%u.%u\n"
@@ -1800,19 +1806,23 @@ void action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data
         "Stable dependency baseline\n"
         "GTK: %s\n"
         "WebKitGTK: %s\n"
-        "GLib: %s",
+        "GLib: %s\n"
+        "C library floor: glibc %s",
         NION_VERSION,
         NION_REPOSITORY_URL,
         package_mode,
         NION_RELEASE_STATUS,
         app->tor_ready ? "connected" : (app->tor_failed ? "error" : "connecting"),
         app->tor_socks_port,
+        bridge_info,
         gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version(),
         webkit_get_major_version(), webkit_get_minor_version(), webkit_get_micro_version(),
         soup_get_major_version(), soup_get_minor_version(), soup_get_micro_version(),
         glib_major_version, glib_minor_version, glib_micro_version,
         NION_TOR_DAEMON_VERSION, NION_TOR_BROWSER_BUNDLE_VERSION,
-        NION_GTK_TESTED_VERSION, NION_WEBKITGTK_TESTED_VERSION, NION_GLIB_TESTED_VERSION);
+        NION_GTK_TESTED_VERSION, NION_WEBKITGTK_TESTED_VERSION, NION_GLIB_TESTED_VERSION,
+        NION_GLIBC_FLOOR);
+    g_free(bridge_info);
     gtk_about_dialog_set_system_information(GTK_ABOUT_DIALOG(dialog), system_info);
     g_free(system_info);
 
@@ -2029,7 +2039,14 @@ void nion_apply_css(void)
         "notebook > header tab { padding: 3px 5px; }";
 
     GtkCssProvider *provider = gtk_css_provider_new();
+    /* gtk_css_provider_load_from_data() is deprecated from GTK 4.12 onward, but
+     * NiOn still supports GTK 4.10, so keep the old call there and use the
+     * replacement everywhere it exists. Both parse the same CSS string. */
+#if GTK_CHECK_VERSION(4, 12, 0)
+    gtk_css_provider_load_from_string(provider, css);
+#else
     gtk_css_provider_load_from_data(provider, css, -1);
+#endif
     GdkDisplay *display = gdk_display_get_default();
     if (display)
         gtk_style_context_add_provider_for_display(display,
@@ -2236,6 +2253,7 @@ void nion_build_ui(NionApp *app)
     GMenu *menu = g_menu_new();
     g_menu_append(menu, "New Private Window", "win.private-window");
     g_menu_append(menu, "New Identity", "win.new-identity");
+    g_menu_append(menu, "Bridges (Censorship Circumvention)…", "win.bridges");
     g_menu_append(menu, "Find in Page", "win.find");
     g_menu_append(menu, "Reload Without Cache", "win.hard-reload");
     GMenu *zoom_menu = g_menu_new();

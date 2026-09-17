@@ -39,7 +39,8 @@ pass "release/runtime scripts consume manifest"
 
 # Release-critical implementation files must not pin these values directly.
 for literal_file in NION_VERSION TOR_BROWSER_VERSION TOR_DAEMON_VERSION TOR_SIGNING_FINGERPRINT APPIMAGE_ARCH \
-  GTK_MIN_VERSION WEBKITGTK_MIN_VERSION GTK_TESTED_VERSION WEBKITGTK_TESTED_VERSION GLIB_TESTED_VERSION; do
+  GTK_MIN_VERSION WEBKITGTK_MIN_VERSION GTK_TESTED_VERSION WEBKITGTK_TESTED_VERSION GLIB_TESTED_VERSION \
+  GLIBC_FLOOR; do
   [[ -s "release/manifest/$literal_file" ]] || fail "missing release/manifest/$literal_file"
 done
 

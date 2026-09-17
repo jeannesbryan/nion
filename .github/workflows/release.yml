@@ -11,7 +11,14 @@ permissions:
 
 jobs:
   appimage-x86_64:
+    # The pinned release environment. Keep this aligned with
+    # release/manifest/GLIBC_FLOOR: a runner with a newer C library would produce
+    # an AppImage that cannot start on the distributions NiOn supports.
     runs-on: ubuntu-24.04
+    env:
+      # The runner has docker, so the cross-distribution smoke test in
+      # release-preflight.sh must not be skipped here.
+      NION_REQUIRE_CONTAINER_TEST: '1'
 
     steps:
       - name: Checkout
@@ -52,8 +59,35 @@ jobs:
             gnupg \
             gh
 
+      - name: Verify pinned release environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          source ./scripts/manifest.sh
+          host_glibc="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "runner glibc=$host_glibc supported floor=$NION_GLIBC_FLOOR"
+          if awk -v a="$host_glibc" -v b="$NION_GLIBC_FLOOR" 'BEGIN{
+                n=split(a,x,"."); m=split(b,y,".");
+                for (i=1;i<=3;i++) { xi=(i<=n?x[i]:0)+0; yi=(i<=m?y[i]:0)+0;
+                  if (xi>yi) exit 1; if (xi<yi) exit 0; }
+                exit 0 }'; then
+            echo "PASS: release runner is at or below the supported C library floor."
+          else
+            echo "::error::This runner provides glibc $host_glibc, which is newer than the supported floor $NION_GLIBC_FLOOR." >&2
+            echo "Bundled GTK/WebKitGTK libraries would then require a newer libc than NiOn promises." >&2
+            echo "Build with ./scripts/build-release-container.sh instead." >&2
+            exit 1
+          fi
+
       - name: Prepare verified Tor runtime
         run: ./scripts/fetch-tor-runtime.sh
+
+      # A plain native build is what preflight and the bridge validator
+      # self-check want to exercise; the AppImage build below is separate.
+      - name: Native release build
+        run: |
+          meson setup build --buildtype=release
+          meson compile -C build
 
       - name: Build production AppImage
         run: ./scripts/build-appimage.sh

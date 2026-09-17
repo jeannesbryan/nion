@@ -363,6 +363,53 @@ static void nion_finish_new_identity(NionApp *app)
      * new circuit finishes bootstrapping, or by nion_set_tor_error on failure. */
 }
 
+/* ---- Bridge configuration change (v2.2) ---- */
+
+void nion_restart_tor_for_bridge_change(NionApp *app)
+{
+    if (!app)
+        return;
+
+    /* Tor is owned by the normal window; a Private Window request routes here. */
+    if (app->is_private)
+        app = app->owner;
+    if (!app || app->shutting_down)
+        return;
+
+    /* Tor is already being stopped/started for another reason (New Identity or
+     * a failure recovery); that restart will pick up the new torrc anyway. */
+    if (app->tor_switching_identity)
+        return;
+
+    /* A bridge change is a routing change only: the browsing identity, cookies
+     * and per-site state are deliberately left alone, unlike New Identity. */
+    app->tor_switching_identity = TRUE;
+    app->tor_ready = FALSE;
+    app->tor_failed = FALSE;
+
+    /* Fail closed while Tor is down: nothing may keep talking to the old
+     * endpoint, and every window is moved back to "connecting". */
+    nion_stop_all_web_activity(app);
+    nion_cancel_active_downloads(app);
+    nion_set_tor_progress(app, 0);
+    nion_set_status(app, "○ TOR RESTART — applying bridge configuration…");
+
+    nion_stop_tor_gracefully(app);
+
+    if (!nion_choose_tor_port(app)) {
+        app->tor_switching_identity = FALSE;
+        return; /* error already surfaced via nion_set_tor_error */
+    }
+    nion_apply_network_proxy(app);
+    if (!nion_start_tor(app)) {
+        app->tor_switching_identity = FALSE;
+        return; /* error already surfaced via nion_set_tor_error */
+    }
+
+    /* The guard is released by nion_set_tor_ready(TRUE) once the new Tor
+     * bootstraps, or by nion_set_tor_error on failure. */
+}
+
 void action_exit(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     (void)action;
@@ -391,6 +438,7 @@ void nion_prepare_dirs(NionApp *app)
     app->content_blocking_file = g_build_filename(app->config_dir, "content-blocking.ini", NULL);
     app->autoplay_file = g_build_filename(app->config_dir, "autoplay.ini", NULL);
     app->preferred_onion_file = g_build_filename(app->config_dir, "preferred-onion.ini", NULL);
+    app->bridge_file = g_build_filename(app->config_dir, "bridges.ini", NULL);
     app->content_filter_store_dir = g_build_filename(app->cache_dir, "content-filters", NULL);
     app->tor_runtime_file = g_build_filename(app->data_dir, "tor-runtime.ini", NULL);
 
@@ -809,6 +857,7 @@ static void nion_cleanup(NionApp *app)
     g_clear_pointer(&app->content_blocking_file, g_free);
     g_clear_pointer(&app->autoplay_file, g_free);
     g_clear_pointer(&app->preferred_onion_file, g_free);
+    g_clear_pointer(&app->bridge_file, g_free);
     g_clear_pointer(&app->content_filter_store_dir, g_free);
     g_clear_pointer(&app->tor_runtime_file, g_free);
     g_clear_pointer(&app->tor_proxy_uri, g_free);
@@ -818,6 +867,10 @@ static void nion_cleanup(NionApp *app)
     if (app->bookmarks) {
         g_ptr_array_unref(app->bookmarks);
         app->bookmarks = NULL;
+    }
+    if (app->bridges) {
+        g_ptr_array_unref(app->bridges);
+        app->bridges = NULL;
     }
     if (app->site_zoom) {
         g_hash_table_unref(app->site_zoom);

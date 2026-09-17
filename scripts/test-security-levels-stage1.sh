@@ -2,14 +2,18 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-fail(){ echo "2.1.0 SECURITY LEVELS STAGE 1: FAIL: $*" >&2; exit 1; }
+fail(){ echo "SECURITY LEVELS STAGE 1: FAIL: $*" >&2; exit 1; }
 SRC=src
 
-[[ "$(tr -d '\r\n' < release/manifest/NION_VERSION)" == "2.1.0" ]] || fail 'manifest version is not 2.1.0'
+# These are the 2.1.0 feature guards. They must stay version-independent, so a
+# release bump does not silently retire them; release-specific metadata
+# assertions live in test-hardening-stage3-<version>.sh.
+VERSION="$(tr -d '\r\n' < release/manifest/NION_VERSION)"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "manifest version missing or malformed: $VERSION"
 release_type="$(tr -d '\r\n' < release/manifest/APPSTREAM_RELEASE_TYPE)"
 release_status="$(tr -d '\r\n' < release/manifest/RELEASE_STATUS)"
 [[ "$release_type" == "development" || "$release_type" == "stable" ]] || fail 'invalid AppStream release type'
-[[ "$release_status" == 'Stable' || "$release_status" == Security\ Levels\ \&\ Escape\ Guards\ development* ]] || fail '2.1.0 release status missing'
+[[ -n "$release_status" ]] || fail 'release status missing'
 
 grep -rFq 'NION_SECURITY_STANDARD' "$SRC" || fail 'Standard level missing'
 grep -rFq 'NION_SECURITY_SAFER' "$SRC" || fail 'Safer level missing'
@@ -37,8 +41,8 @@ grep -rFq 'g_hash_table_remove_all(app->temporary_permissions)' "$SRC" || fail '
 grep -rFq 'webkit_web_view_set_camera_capture_state' "$SRC" || fail 'level change does not stop camera capture'
 grep -rFq 'webkit_web_view_set_microphone_capture_state' "$SRC" || fail 'level change does not stop microphone capture'
 
-grep -Eq '\\*\\*(Current development|Stable release): 2\.1\.0' README.md || fail 'README 2.1.0 marker missing'
+grep -Eq "\*\*(Current development|Stable release): ${VERSION//./\\.}" README.md || fail "README release marker for $VERSION missing"
 grep -Fq '### Security Levels' README.md || fail 'README Security Levels section missing'
 grep -Fq 'Stage 2 — Escape Guards' README.md || fail 'README Stage 2 handoff missing'
 
-printf 'NION 2.1.0 SECURITY LEVELS STAGE 1: PASS\n'
+printf 'NION %s SECURITY LEVELS STAGE 1: PASS\n' "$VERSION"

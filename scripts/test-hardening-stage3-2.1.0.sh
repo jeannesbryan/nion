@@ -7,22 +7,16 @@ source "$ROOT/scripts/manifest.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
-[[ "$NION_VERSION" == "2.1.0" ]] || fail "expected NiOn 2.1.0"
-[[ "$NION_RELEASE_STATUS" == "Stable" ]] || fail "2.1.0 must be Stable"
+# This file is the 2.1.0 *feature* regression guard. It is deliberately
+# version-independent: the release-specific metadata assertions for the current
+# release live in test-hardening-stage3-2.2.0.sh, so a version bump does not
+# silently retire these invariants.
+[[ "$NION_RELEASE_STATUS" == "Stable" ]] || fail "NiOn must be released as Stable"
 [[ "$NION_APPSTREAM_RELEASE_TYPE" == "stable" ]] || fail "AppStream release must be stable"
-pass "stable release metadata"
-
 [[ "$NION_GTK_MIN_VERSION" == "4.10" ]] || fail "GTK minimum compatibility floor changed unexpectedly"
 [[ "$NION_WEBKITGTK_MIN_VERSION" == "2.40" ]] || fail "WebKitGTK minimum compatibility floor changed unexpectedly"
-[[ "$NION_GTK_TESTED_VERSION" == "4.22.4" ]] || fail "GTK stable baseline mismatch"
-[[ "$NION_WEBKITGTK_TESTED_VERSION" == "2.52.5" ]] || fail "WebKitGTK stable baseline mismatch"
-[[ "$NION_GLIB_TESTED_VERSION" == "2.88.2" ]] || fail "GLib stable baseline mismatch"
-pass "minimum vs stable-baseline dependency metadata"
+pass "release status and compatibility floors"
 
-grep -Fq 'Stable release: 2.1.0' README.md || fail "README stable marker missing"
-grep -Fq 'Stable GTK baseline       4.22.4' BUILDING.md || fail "BUILDING GTK stable baseline missing"
-grep -Fq 'Stable WebKitGTK baseline 2.52.5' BUILDING.md || fail "BUILDING WebKitGTK stable baseline missing"
-grep -Fq 'Stable GLib baseline      2.88.2' BUILDING.md || fail "BUILDING GLib stable baseline missing"
 grep -rFq 'Stable dependency baseline' src || fail "About stable baseline missing"
 grep -Fq 'GTKStableBaseline=$NION_GTK_TESTED_VERSION' scripts/build-appimage.sh || fail "AppImage BUILD-INFO GTK stable baseline missing"
 grep -Fq 'outside the preferred stable' scripts/build-appimage.sh || fail "AppImage unstable dependency warning missing"

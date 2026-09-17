@@ -22,6 +22,7 @@
 #include "permission.h"
 #include "privacy.h"
 #include "tor-core.h"
+#include "bridge.h"
 #include "network.h"
 #include "session.h"
 #include "tabs.h"
@@ -440,6 +441,7 @@ static void nion_install_actions(NionApp *app)
         { "bookmark-page", action_bookmark_page, NULL, NULL, NULL, {0} },
         { "bookmarks", action_bookmarks, NULL, NULL, NULL, {0} },
         { "preferences", action_preferences, NULL, NULL, NULL, {0} },
+        { "bridges", action_bridges, NULL, NULL, NULL, {0} },
         { "privacy-audit", action_privacy_audit, NULL, NULL, NULL, {0} },
         { "clear-site-data", action_clear_site_data, NULL, NULL, NULL, {0} },
         { "forget-site", action_forget_site, NULL, NULL, NULL, {0} },
@@ -536,6 +538,14 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     };
     nion_tor_set_callbacks(&tor_callbacks);
 
+    /* bridge.c owns the bridge list / torrc fragment; it never calls into the
+     * UI or lifecycle layers directly. */
+    static const NionBridgeCallbacks bridge_callbacks = {
+        .set_status = nion_set_status,
+        .restart_tor = nion_restart_tor_for_bridge_change,
+    };
+    nion_bridge_set_callbacks(&bridge_callbacks);
+
     /* Session restoration calls tab/UI operations that still live in main.c. */
     static const NionSessionCallbacks session_callbacks = {
         .new_tab = nion_new_tab,
@@ -600,6 +610,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     nion_load_content_blocking(app);
     nion_load_autoplay(app);
     nion_load_preferred_onion(app);
+    nion_load_bridges(app);
     nion_prepare_content_filter(app);
     gboolean tor_port_ok = nion_choose_tor_port(app);
     if (!nion_prepare_network(app)) {
@@ -619,6 +630,12 @@ static void on_activate(GtkApplication *application, gpointer user_data)
 
 int main(int argc, char **argv)
 {
+    /* Bridge validator / torrc-builder self-check (release test hook used by
+     * scripts/test-bridges-stage1.sh). Runs before GTK starts, does not touch
+     * the profile or the network, and exits with the result. */
+    if (g_strcmp0(g_getenv("NION_BRIDGE_SELFCHECK"), "1") == 0)
+        return nion_bridge_selfcheck() ? 0 : 1;
+
     NionApp app = {0};
     app.private_windows = g_ptr_array_new();
     GtkApplication *application = gtk_application_new(NION_APP_ID, G_APPLICATION_DEFAULT_FLAGS);

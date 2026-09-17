@@ -22,6 +22,7 @@ webkitgtk_min_version = fs.read('release/manifest/WEBKITGTK_MIN_VERSION').strip(
 gtk_tested_version = fs.read('release/manifest/GTK_TESTED_VERSION').strip()
 webkitgtk_tested_version = fs.read('release/manifest/WEBKITGTK_TESTED_VERSION').strip()
 glib_tested_version = fs.read('release/manifest/GLIB_TESTED_VERSION').strip()
+glibc_floor = fs.read('release/manifest/GLIBC_FLOOR').strip()
 
 gtk_dep = dependency('gtk4', version: '>=' + gtk_min_version)
 webkit_dep = dependency('webkitgtk-6.0', version: '>=' + webkitgtk_min_version)
@@ -43,6 +44,7 @@ conf.set_quoted('NION_TOR_DAEMON_VERSION', tor_daemon_version)
 conf.set_quoted('NION_GTK_TESTED_VERSION', gtk_tested_version)
 conf.set_quoted('NION_WEBKITGTK_TESTED_VERSION', webkitgtk_tested_version)
 conf.set_quoted('NION_GLIB_TESTED_VERSION', glib_tested_version)
+conf.set_quoted('NION_GLIBC_FLOOR', glibc_floor)
 configure_file(output: 'config.h', configuration: conf)
 
 metainfo_conf = configuration_data()
@@ -72,6 +74,7 @@ executable(
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',
+  'src/bridge.c',
   'src/app.c',
   'src/ui.c',
   nion_resources,
