@@ -10,6 +10,11 @@ APPIMAGE="${1:-$ROOT/dist/$NION_APPIMAGE_BASENAME}"
 # about the real problem.
 APPIMAGE="$(cd "$(dirname "$APPIMAGE")" && pwd)/$(basename "$APPIMAGE")"
 [[ -f "$APPIMAGE" ]] || { echo "Not a file: $APPIMAGE" >&2; exit 1; }
+[[ -x "$APPIMAGE" ]] || {
+  echo "Not executable: $APPIMAGE" >&2
+  echo "An AppImage must carry the execute bit; run: chmod +x '$APPIMAGE'" >&2
+  exit 1
+}
 
 # Cross-distribution smoke test (wired into release preflight in 2.2.0).
 #

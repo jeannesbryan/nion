@@ -82,6 +82,17 @@ elif [[ -f "$TARGET" ]]; then
   # directory, so a relative target such as dist/NiOn-2.2.0-x86_64.AppImage
   # would no longer resolve and the extraction would look like a corrupt file.
   TARGET_ABS="$(cd "$(dirname "$TARGET")" && pwd)/$(basename "$TARGET")"
+
+  # An AppImage downloaded from a release page has no execute bit, and running
+  # it is how extraction works. Say so instead of reporting a corrupt file:
+  # "chmod +x" is the actual fix, and it is what the user needs to do before
+  # launching NiOn anyway.
+  if [[ ! -x "$TARGET_ABS" ]]; then
+    echo "Not executable: $TARGET" >&2
+    echo "An AppImage must carry the execute bit; run: chmod +x '$TARGET'" >&2
+    exit 1
+  fi
+
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/nion-glibc.XXXXXX")"
   ( cd "$WORK" && APPIMAGE_EXTRACT_AND_RUN=1 "$TARGET_ABS" --appimage-extract >/dev/null 2>&1 ) || {
     echo "Could not extract $TARGET (expected an AppImage or a directory)" >&2
