@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Dependency refresh only. No source changes: every line below is a version bump
+and its verification, so the 2.2.0 behaviour guarantees are untouched.
+
+### Updated dependencies
+
+- **Tor runtime moved to the current Tor Browser release:** Expert Bundle 15.0.23 → **15.0.24**, Tor daemon 0.4.9.12 → **0.4.9.13**. Checked against `dist.torproject.org` (15.0.24 is the newest release; there is no 15.0.25) and fetched with the usual GPG verification against the pinned signing key. Tor 0.4.9.14 exists as a standalone daemon release but is not what the bundle ships, and the manifest must describe the bundle — `fetch-tor-runtime.sh` refuses to proceed unless the bundled `tor --version` matches, so the pair cannot silently drift.
+- **Deliberately not bumped:** GTK, GLib and WebKitGTK. None of them is pinned by this repository — the release AppImage is built inside the pinned `ubuntu:24.04` container and takes those libraries from there, so their versions are an artifact of the build image, not of a manifest value. `GTK_TESTED_VERSION` / `GLIB_TESTED_VERSION` / `WEBKITGTK_TESTED_VERSION` are records of what the current release was verified against, not requests. Raising WebKitGTK to 2.54 would mean moving the build image and re-checking both the glibc floor promise and the 4 GB memory target first.
+
+### Verification
+
+- `scripts/fetch-tor-runtime.sh` fetched Expert Bundle 15.0.24, verified its signature, and reported the bundled daemon as `Tor version 0.4.9.13`.
+
 ## 2.2.0 — Stable
 
 ### Censorship circumvention (bridges)
