@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.1 — Stable
 
 Dependency refresh only. No source changes: every line below is a version bump
 and its verification, so the 2.2.0 behaviour guarantees are untouched.

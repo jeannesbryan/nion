@@ -1,6 +1,6 @@
 # Building NiOn
 
-NiOn 2.2.0 Stable targets GNU/Linux x86_64 for its production AppImage.
+NiOn 2.2.1 Stable targets GNU/Linux x86_64 for its production AppImage.
 
 ## Requirements
 
@@ -14,7 +14,7 @@ This installs the compiler/build stack, GTK 4 and WebKitGTK 6 development files,
 
 A system Tor package is not required.
 
-### Stable dependency baseline for 2.2.0
+### Stable dependency baseline for 2.2.1
 
 The source keeps its API compatibility floors deliberately conservative. The "baseline" values are no longer an aspiration recorded next to the build: they describe the **pinned release environment** the AppImage is actually produced in, so documentation and artifact cannot drift apart.
 
@@ -76,10 +76,10 @@ printf 'NiOn: %s\nTor: %s\nExpert Bundle: %s\nAppImage: %s\n' \
   "$NION_APPIMAGE_BASENAME"
 ```
 
-For NiOn 2.2.0 Stable the manifest-derived AppImage name is:
+For NiOn 2.2.1 Stable the manifest-derived AppImage name is:
 
 ```text
-NiOn-2.2.0-x86_64.AppImage
+NiOn-2.2.1-x86_64.AppImage
 ```
 
 Do not hard-code a release version into build/package scripts. Update the appropriate one-line manifest value instead.
@@ -146,8 +146,8 @@ The normal production flow is:
 Expected artifacts:
 
 ```text
-dist/NiOn-2.2.0-x86_64.AppImage
-dist/NiOn-2.2.0-x86_64.AppImage.sha256
+dist/NiOn-2.2.1-x86_64.AppImage
+dist/NiOn-2.2.1-x86_64.AppImage.sha256
 ```
 
 The AppImage intentionally does not replace host-core components such as the kernel, glibc base environment, or graphics-driver stack.
@@ -156,26 +156,26 @@ The AppImage intentionally does not replace host-core components such as the ker
 
 ```bash
 cd dist
-sha256sum -c NiOn-2.2.0-x86_64.AppImage.sha256
+sha256sum -c NiOn-2.2.1-x86_64.AppImage.sha256
 ```
 
 Expected:
 
 ```text
-NiOn-2.2.0-x86_64.AppImage: OK
+NiOn-2.2.1-x86_64.AppImage: OK
 ```
 
 Run it:
 
 ```bash
-chmod +x NiOn-2.2.0-x86_64.AppImage
-./NiOn-2.2.0-x86_64.AppImage
+chmod +x NiOn-2.2.1-x86_64.AppImage
+./NiOn-2.2.1-x86_64.AppImage
 ```
 
 Without FUSE:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-2.2.0-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-2.2.1-x86_64.AppImage
 ```
 
 ## Preflight and runtime validation
@@ -190,7 +190,7 @@ Preflight also verifies the C library floor of the built AppImage and runs the
 cross-distribution container smoke test when `podman` or `docker` is available:
 
 ```bash
-./scripts/test-appimage-containers.sh dist/NiOn-2.2.0-x86_64.AppImage
+./scripts/test-appimage-containers.sh dist/NiOn-2.2.1-x86_64.AppImage
 ```
 
 That test is the one that would have caught the 2.1.0 loader failure: it extracts
@@ -202,7 +202,7 @@ failure rather than a warning.
 Then run the packaged diagnostic explicitly:
 
 ```bash
-./scripts/test-appimage.sh dist/NiOn-2.2.0-x86_64.AppImage
+./scripts/test-appimage.sh dist/NiOn-2.2.1-x86_64.AppImage
 ```
 
 Finally complete the live scenarios in `TESTING.md`, including Tor failure/recovery, normal/private persistence separation, downloads, context menus/new-window links, and the network audit.
@@ -244,12 +244,12 @@ NiOn's preferred release flow is manual after local validation.
 1. Build and test the AppImage.
 2. Verify its SHA-256 file.
 3. Commit/push the final source.
-4. Create the GitHub Release/tag `v2.2.0` only after the final runtime smoke test passes.
+4. Create the GitHub Release/tag `v2.2.1` only after the final runtime smoke test passes.
 5. Upload:
 
 ```text
-NiOn-2.2.0-x86_64.AppImage
-NiOn-2.2.0-x86_64.AppImage.sha256
+NiOn-2.2.1-x86_64.AppImage
+NiOn-2.2.1-x86_64.AppImage.sha256
 ```
 
 The repository's GitHub Actions workflow remains optional; the locally validated AppImage is the intended primary release artifact.

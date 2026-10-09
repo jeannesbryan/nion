@@ -4,16 +4,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 source "$ROOT/scripts/manifest.sh"
 
-# NiOn 2.2.0 release guard: bridges, cross-distribution container testing and
+# NiOn 2.2.x release guard: bridges, cross-distribution container testing and
 # the C library floor that the 2.1.0 AppImage got wrong.
+#
+# The release-metadata assertions read release/manifest/ instead of a literal
+# version. The manifest is the single source of truth, so a patch release such
+# as 2.2.1 must not silently retire this guard or demand a copy of this file
+# (same reasoning as test-hardening-stage3-2.1.0.sh).
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
-[[ "$NION_VERSION" == "2.2.0" ]] || fail "expected NiOn 2.2.0"
-[[ "$NION_RELEASE_STATUS" == "Stable" ]] || fail "2.2.0 must be Stable"
+[[ "$NION_RELEASE_STATUS" == "Stable" ]] || fail "$NION_VERSION must be Stable"
 [[ "$NION_APPSTREAM_RELEASE_TYPE" == "stable" ]] || fail "AppStream release must be stable"
-pass "stable release metadata"
+pass "stable release metadata ($NION_VERSION)"
 
 # --- Pinned release environment ----------------------------------------------
 [[ "$NION_GLIBC_FLOOR" == "2.39" ]] || fail "supported C library floor changed unexpectedly"
@@ -24,7 +28,7 @@ pass "stable release metadata"
 [[ "$NION_GLIB_TESTED_VERSION" == "2.80.0" ]] || fail "GLib release baseline mismatch"
 pass "minimum floors vs pinned release baseline"
 
-grep -Fq 'Stable release: 2.2.0' README.md || fail "README stable marker missing"
+grep -Fq "Stable release: $NION_VERSION" README.md || fail "README stable marker does not match the manifest version ($NION_VERSION)"
 grep -Fq 'Stable GTK baseline       4.14.5' BUILDING.md || fail "BUILDING GTK release baseline missing"
 grep -Fq 'Stable WebKitGTK baseline 2.52.6' BUILDING.md || fail "BUILDING WebKitGTK release baseline missing"
 grep -Fq 'Stable GLib baseline      2.80.0' BUILDING.md || fail "BUILDING GLib release baseline missing"
@@ -61,7 +65,7 @@ grep -Fq 'nion_bridges_active' src/tor-core.c || fail "bridge mode is not report
 grep -rFq 'WEBKIT_NETWORK_PROXY_MODE_CUSTOM' src || fail "Tor custom proxy missing"
 grep -rFq 'socks://127.0.0.1:9' src || fail "dead-SOCKS fail-closed guard missing"
 grep -rFq 'webkit_settings_set_enable_webrtc(settings, FALSE)' src || fail "WebRTC hardening missing"
-pass "2.2.0 security/fail-closed invariants"
+pass "$NION_VERSION security/fail-closed invariants"
 
 # Obsolete / deprecated Tor and GTK/WebKit call sites cleaned up in 2.2.0.
 # Exclude the test suite itself: this very assertion contains the string it
@@ -75,11 +79,23 @@ grep -Fq 'GTK_CHECK_VERSION(4, 12, 0)' src/ui.c || fail "GTK 4.10 compatibility 
 grep -Fq 'WEBKIT_CHECK_VERSION(2, 52, 0)' src/privacy.c || fail "deprecated hyperlink-auditing call is not version-guarded"
 pass "obsolete Tor option and deprecated GTK/WebKit call sites cleaned up"
 
-if grep -RInE --exclude='CHANGELOG.md' --exclude='TESTING.md' \
-  --exclude='test-hardening-stage3-2.2.0.sh' --exclude='test-hardening-stage3-2.1.0.sh' \
-  'Current development: 2\.[01]\.0|stable release: 2\.1\.0' README.md BUILDING.md PRIVACY.md SECURITY.md data release/manifest 2>/dev/null; then
-  fail "stale development/release marker remains on release surfaces"
-fi
-pass "no stale release marker"
+# Every release marker must name the manifest version. This is checked by
+# extracting the value and comparing it, not by pattern-matching a literal from
+# some past release: a stale literal is precisely what this is meant to catch,
+# and the old version of this assertion could only ever look for 2.0/2.1 while
+# the repository moved on. Historical versions elsewhere in the changelog and
+# release notes are not release surfaces and are not inspected.
+mapfile -t _named_versions < <(
+  grep -rhoE \
+    'Stable release: *[0-9]+\.[0-9]+\.[0-9]+|Stable dependency baseline for [0-9]+\.[0-9]+\.[0-9]+|NiOn [0-9]+\.[0-9]+\.[0-9]+ Stable|Release/tag .?v?[0-9]+\.[0-9]+\.[0-9]+' \
+    README.md BUILDING.md PRIVACY.md SECURITY.md 2>/dev/null |
+  grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u
+)
+[[ ${#_named_versions[@]} -gt 0 ]] || fail "no release marker found on the release surfaces"
+for _v in "${_named_versions[@]}"; do
+  [[ "$_v" == "$NION_VERSION" ]] || fail "stale release marker '$_v' on a release surface (manifest says $NION_VERSION)"
+done
+unset _named_versions _v
+pass "release markers all name $NION_VERSION"
 
-echo 'NION 2.2.0 FINAL HARDENING CHECK: PASS'
+echo "NION $NION_VERSION FINAL HARDENING CHECK: PASS"
