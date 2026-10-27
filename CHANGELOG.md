@@ -1,5 +1,75 @@
 # Changelog
 
+## 2.2.2 — Stable
+
+Security release for the bundled Tor runtime. No source changes: every line
+below is a version bump and its verification, so the 2.2.0/2.2.1 behaviour
+guarantees are untouched.
+
+### Updated dependencies
+
+- **Tor runtime moved to Expert Bundle 15.0.26:** Tor daemon 0.4.9.13 →
+  **0.4.9.14**. This is not a routine bump — the 0.4.9.14 ChangeLog opens with
+  "Another week, another security release... We strongly recommend upgrading as
+  soon as possible" and carries **TROVE-2026-067** (the `MiddleOnly` flag was
+  ignored on non-authority relays, so a client could use a MiddleOnly relay for
+  a role it was not meant to hold in onion-service circuits) and
+  **TROVE-2026-062** (a router descriptor was treated as unexpired even after
+  its family certificate had expired), plus a conflux/LINK bug that could
+  trigger a fatal assertion on relays. Both Troves affect onion-service paths,
+  which is precisely what NiOn is built to use.
+- **Correction to 2.2.1's note:** that entry said 15.0.24 was the newest release
+  and that there was no 15.0.25. Both statements were true when written; they
+  are not true now. 15.0.25 and 15.0.26 have since been published, and
+  15.0.24 has been removed from `dist.torproject.org` (HTTP 404). It remains
+  available from `archive.torproject.org`, which is the host
+  `fetch-tor-runtime.sh` actually uses, so a clean clone can still fetch 15.0.24
+  if a checkout pins it. Do not "fix" that script by pointing it at `dist`.
+- **Deliberately not bumped:** GTK, GLib and WebKitGTK. None of them is pinned by
+  this repository — the release AppImage is built inside the pinned
+  `ubuntu:24.04` container and takes those libraries from there, so their
+  versions are an artifact of the build image, not of a manifest value.
+  `GTK_TESTED_VERSION` / `GLIB_TESTED_VERSION` / `WEBKITGTK_TESTED_VERSION` are
+  records of what the current release was verified against, not requests.
+  Raising WebKitGTK to 2.54 would mean moving the build image and re-checking
+  both the glibc floor promise and the 4 GB memory target first.
+
+### Verification
+
+- Expert Bundle 15.0.26 fetched through `scripts/fetch-tor-runtime.sh`, which
+  reported a **Good signature** from `Tor Browser Developers (signing key)`
+  (primary fingerprint `EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`, matching
+  `TOR_SIGNING_FINGERPRINT`), sha256
+  `19cf18726eecb362e0f21d27afa9ea9efe5da928bfdfbb1ceb5fe54519e87f4a`, and a
+  bundled daemon reporting `Tor version 0.4.9.14`.
+- The bundled 0.4.9.14 was also run directly, outside NiOn, before this release:
+  it bootstrapped to 100%, `check.torproject.org` returned
+  `{"IsTor":true,"IP":"192.42.116.94"}`, a clearnet page loaded with HTTP 200,
+  and a Tor v3 onion service loaded with HTTP 200. No warnings were logged.
+- Bundle layout is unchanged (flat: `data/ debug/ docs/ tor/
+  pluggable_transports/`), so `TOR_RUNTIME_LAYOUT` stays at 2.
+
+### Upgrade note: stale Tor cache can trip the bootstrap timeout
+
+Measured while testing this release's AppImage on the build machine, and worth
+knowing before reporting a hang:
+
+| Tor `DataDirectory` | time from 0% to 100% |
+|---|---|
+| fresh (empty) | **47 s** |
+| a copy of an 18-day-old profile | **200 s** |
+
+The old profile carried an unused `cached-microdescs` file of 22 MB dated nine
+days earlier plus a 20 MB `.new` from an interrupted run. NiOn's fail-closed
+bootstrap guard gives Tor **120 seconds** and then stops it, so an installation
+with a cache in that state can hit the timeout even though nothing is wrong
+with Tor itself. Deleting `cached-microdescs`, `cached-microdescs.new` and
+`cached-microdesc-consensus` from the Tor data directory clears it — those are
+download caches, not user data: cookies, logins, bookmarks and per-site rules
+live elsewhere in the profile and are untouched. Tor re-fetches them on the next
+start. This is a pre-existing condition, not a change in 2.2.2; the timeout
+value is deliberately left alone because it is a fail-closed guard.
+
 ## 2.2.1 — Stable
 
 Dependency refresh only. No source changes: every line below is a version bump
