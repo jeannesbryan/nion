@@ -1,5 +1,79 @@
 # Changelog
 
+## 2.2.3 — Stable
+
+Security release for the bundled Tor runtime. No source changes: every line
+below is a version bump and its verification, so the 2.2.0/2.2.1/2.2.2 behaviour
+guarantees are untouched.
+
+### Updated dependencies
+
+- **Tor runtime moved to Expert Bundle 16.0:** Tor daemon 0.4.9.14 →
+  **0.4.9.15**. The 0.4.9.15 ChangeLog (2026-10-28) opens with "This is another
+  security release that includes new DoS defenses against large volumes of
+  directory requests received by relays", and closes its summary with "This
+  release primarily affects relays so please upgrade as soon as possible."
+  That framing matters for reading the risk honestly: NiOn runs Tor as a
+  client (`ClientOnly 1`), never as a relay, so the new `DoSBeginDirRate*`
+  defences do not add client-side protection. What does touch a client:
+  - **TAP keys are gone from microdescriptors.** Directory authorities now
+    require the `DESC_NO_TAP` / `MICRODESC_NO_TAP` capabilities, so **Tor
+    0.4.8 and earlier no longer work on the network at all**. NiOn ships
+    0.4.9.x and was already unaffected, but anyone pinning an older runtime
+    would have found it unable to build a circuit.
+  - **Scheduler ordering bugfix (`smartlist_pqueue_remove`, bug 41428,
+    bugfix on 0.2.2.7-alpha).** Schedulers for circuits within a channel and
+    for channels on the internet connection could serve items out of order,
+    temporarily starving higher-priority circuits. This is a client bug, not a
+    relay one.
+  - Corrected handling of the middle-only flag at directory authorities
+    (bug 41457, bugfix on 0.4.9.14, so a direct follow-up to what 2.2.2
+    shipped), a conflux/control-port `ATTACHSTREAM` fix (bug 41454) and an
+    onion-service control-port memory leak in `HSPOST` (bug 41455). Neither of
+    the last two applies to NiOn: it opens no control port, by design.
+- **Why "15 → 16" looks bigger than it is:** Expert Bundle 16.0 rides a major
+  Tor Browser release (Firefox ESR 153, a redesigned Settings surface), but
+  NiOn never takes the browser from that bundle. It takes `tor/` and
+  `pluggable_transports/` only, so none of the Firefox-side changes are
+  reachable from NiOn's GTK 4 + WebKitGTK UI. The bundle's own layout is
+  unchanged (flat: `data/ debug/ docs/ tor/ pluggable_transports/`), so
+  `TOR_RUNTIME_LAYOUT` stays at 2.
+- **Deliberately not bumped:** GTK, GLib and WebKitGTK. None of them is pinned by
+  this repository — the release AppImage is built inside the pinned
+  `ubuntu:24.04` container and takes those libraries from there, so their
+  versions are an artifact of the build image, not of a manifest value.
+  `GTK_TESTED_VERSION` / `GLIB_TESTED_VERSION` / `WEBKITGTK_TESTED_VERSION` are
+  records of what the current release was verified against, not requests.
+  Raising WebKitGTK to 2.54 would mean moving the build image and re-checking
+  both the glibc floor promise and the 4 GB memory target first.
+
+### Verification
+
+- Expert Bundle 16.0 fetched through `scripts/fetch-tor-runtime.sh`, which
+  reported a **Good signature** from `Tor Browser Developers (signing key)`
+  (primary fingerprint `EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`, matching
+  `TOR_SIGNING_FINGERPRINT`), sha256
+  `cc950ebe9acb80188325c3a2cd8817def7dd7237d6fdcd861bb87b234a0cb2fd`, and a
+  bundled daemon reporting `Tor version 0.4.9.15 (git-4d8efff53a86670b)`.
+- The signature is made by subkey `022DA248432D2A0E0F54E65E316C1FACD62D07D9`,
+  which is newer than the subkey that signed 15.0.26. It is a subkey of the
+  pinned primary key, not a replacement for it — worth stating because a
+  keyring that only carried the older subkey would report a failure that is
+  not a compromise.
+- The bundled 0.4.9.15 was also run directly, outside NiOn, before this
+  release: it bootstrapped from an empty `DataDirectory`, `check.torproject.org`
+  returned `{"IsTor":true,"IP":"204.8.96.68"}`, a clearnet page loaded with
+  HTTP 200, and a Tor v3 onion service loaded with HTTP 200 in 4.5 s. No
+  warnings were logged.
+- `--verify-config` accepts NiOn's exact torrc in both shapes: direct
+  (`ClientOnly`, `SafeSocks`, `ClientRejectInternalAddresses`,
+  `ClientDNSRejectInternalAddresses`) and bridge mode
+  (`UseBridges` + `ClientTransportPlugin obfs4 exec …/lyrebird`). No obsolete
+  options were reported, so 16.0 does not invalidate any stored bridge set.
+- Bridge transports still shipped by the bundle: `lyrebird` (obfs4,
+  webtunnel, meek_lite) and `conjure-client` — all four transports remain
+  available.
+
 ## 2.2.2 — Stable
 
 Security release for the bundled Tor runtime. No source changes: every line
