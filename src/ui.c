@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "types.h"
+#include "find-label.h"
 #include "navigation.h"
 #include "permission.h"
 #include "per-site.h"
@@ -1558,29 +1559,64 @@ static void nion_find_set_result(NionApp *app, const gchar *text)
         gtk_label_set_text(GTK_LABEL(app->find_match_label), text ? text : "");
 }
 
+/* WebKit hands over a total and nothing else, so the label is assembled from
+ * the total plus the position this file keeps. Two behaviours worth naming:
+ *
+ * - G_MAXUINT means WebKit stopped counting at its own ceiling. Reporting that
+ *   as a plain number would be a lie, so the total prints as "1000+" and the
+ *   position drops to a bare count, because "3 of 1000+" would imply the
+ *   hundredth match is somewhere it is not.
+ * - The index is clamped against the total on every render instead of only
+ *   when it changes. A page that finishes loading mid-search shrinks the total
+ *   under a stale index, and rendering 7 of 3 is worse than rendering 3 of 3. */
+static void nion_find_render_label(NionApp *app)
+{
+    if (!app || !app->find_match_label)
+        return;
+
+    gchar *label = nion_find_format_label(app->find_index, app->find_total);
+    nion_find_set_result(app, label);
+    g_free(label);
+
+    /* The formatting step clamps, so mirror the clamped value back. Otherwise
+     * a stale index could survive a shrinking total and the next step would
+     * start from a position the label never showed. */
+    if (app->find_total > 0) {
+        if (app->find_index < 1)
+            app->find_index = 1;
+        if (app->find_index > app->find_total)
+            app->find_index = app->find_total;
+    }
+}
+
 void on_find_found(WebKitFindController *controller, guint match_count, gpointer user_data)
 {
     (void)controller;
     NionTab *tab = user_data;
     if (!tab || nion_current_tab(tab->app) != tab || !gtk_widget_get_visible(tab->app->find_bar))
         return;
-    gchar *label = NULL;
-    if (match_count == G_MAXUINT)
-        label = g_strdup("1000+ matches");
-    else if (match_count == 1)
-        label = g_strdup("1 match");
-    else
-        label = g_strdup_printf("%u matches", match_count);
-    nion_find_set_result(tab->app, label);
-    g_free(label);
+
+    NionApp *app = tab->app;
+    app->find_total = match_count;
+    /* found-text also fires for search_next/search_previous. Only a search
+     * that started fresh may reset the position, otherwise stepping forward
+     * would snap the label back to the first match every single time. */
+    if (app->find_new_search) {
+        app->find_index = 1;
+        app->find_new_search = FALSE;
+    }
+    nion_find_render_label(app);
 }
 
 void on_find_failed(WebKitFindController *controller, gpointer user_data)
 {
     (void)controller;
     NionTab *tab = user_data;
-    if (tab && nion_current_tab(tab->app) == tab && gtk_widget_get_visible(tab->app->find_bar))
+    if (tab && nion_current_tab(tab->app) == tab && gtk_widget_get_visible(tab->app->find_bar)) {
+        tab->app->find_total = 0;
+        tab->app->find_index = 0;
         nion_find_set_result(tab->app, "No matches");
+    }
 }
 
 static void nion_find_run(NionApp *app)
@@ -1592,9 +1628,19 @@ static void nion_find_run(NionApp *app)
     WebKitFindController *controller = webkit_web_view_get_find_controller(tab->web_view);
     if (!text || !*text) {
         webkit_find_controller_search_finish(controller);
+        app->find_total = 0;
+        app->find_index = 0;
+        app->find_new_search = FALSE;
         nion_find_set_result(app, "");
         return;
     }
+    /* Any call here starts a new search: either the entry changed, the bar was
+     * opened, or the page reloaded under an open bar. The position restarts at
+     * the first match, and the flag lets on_find_found know this total belongs
+     * to a fresh query rather than to a step. */
+    app->find_new_search = TRUE;
+    app->find_total = 0;
+    app->find_index = 1;
     webkit_find_controller_search(controller, text,
         WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE | WEBKIT_FIND_OPTIONS_WRAP_AROUND, 1000);
 }
@@ -1617,6 +1663,9 @@ static void nion_find_close(NionApp *app)
     if (tab)
         webkit_find_controller_search_finish(webkit_web_view_get_find_controller(tab->web_view));
     gtk_widget_set_visible(app->find_bar, FALSE);
+    app->find_total = 0;
+    app->find_index = 0;
+    app->find_new_search = FALSE;
     nion_find_set_result(app, "");
     if (tab)
         gtk_widget_grab_focus(GTK_WIDGET(tab->web_view));
@@ -1634,13 +1683,25 @@ static void on_find_entry_changed(GtkEditable *editable, gpointer user_data)
     nion_find_run(user_data);
 }
 
+/* The counter steps here rather than in on_find_found, because found-text
+ * cannot tell a step from a fresh search. Wrapping is done by hand so the label
+ * stays truthful: WebKit searches with WRAP_AROUND, so going past the last
+ * match lands back on the first, and the counter has to follow that instead of
+ * printing "18 of 17". The label is updated immediately, without waiting for
+ * found-text, because that signal may not fire again when the search does not
+ * actually move (a single match, for instance). */
 static void on_find_prev_clicked(GtkButton *button, gpointer user_data)
 {
     (void)button;
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
-    if (tab)
-        webkit_find_controller_search_previous(webkit_web_view_get_find_controller(tab->web_view));
+    if (!tab)
+        return;
+    if (app->find_total > 0) {
+        app->find_index = nion_find_step_position(app->find_index, app->find_total, -1);
+        nion_find_render_label(app);
+    }
+    webkit_find_controller_search_previous(webkit_web_view_get_find_controller(tab->web_view));
 }
 
 static void on_find_next_clicked(GtkButton *button, gpointer user_data)
@@ -1648,8 +1709,13 @@ static void on_find_next_clicked(GtkButton *button, gpointer user_data)
     (void)button;
     NionApp *app = user_data;
     NionTab *tab = nion_current_tab(app);
-    if (tab)
-        webkit_find_controller_search_next(webkit_web_view_get_find_controller(tab->web_view));
+    if (!tab)
+        return;
+    if (app->find_total > 0) {
+        app->find_index = nion_find_step_position(app->find_index, app->find_total, 1);
+        nion_find_render_label(app);
+    }
+    webkit_find_controller_search_next(webkit_web_view_get_find_controller(tab->web_view));
 }
 
 static void on_find_close_clicked(GtkButton *button, gpointer user_data)

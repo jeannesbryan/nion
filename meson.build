@@ -60,6 +60,7 @@ executable(
   'nion',
   'src/main.c',
   'src/util.c',
+  'src/find-label.c',
   'src/navigation.c',
   'src/per-site.c',
   'src/content-filter.c',

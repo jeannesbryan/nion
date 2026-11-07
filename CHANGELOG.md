@@ -2,8 +2,34 @@
 
 ## Unreleased
 
-Three Onion-Location gaps, found by comparing NiOn against what Brave and Tor
-Browser do with the same header.
+Find bar position counter, plus three Onion-Location gaps found by comparing
+NiOn against what Brave and Tor Browser do with the same header.
+
+### Changed
+
+- **The find bar reports the position, not just the total.** It used to say
+  "17 matches" and leave you guessing where you were; it now says "3 of 17".
+  WebKit exposes only a total through `found-text`, never which match is
+  selected, so the position is tracked in `NionApp`. Two details matter:
+  `found-text` also fires for next/previous, so a flag distinguishes a fresh
+  search from a step (without it the counter would snap back to 1 on every
+  click), and the wraparound is done by hand to match WebKit's own
+  `WRAP_AROUND`, so stepping past the last match shows "1 of 17" instead of
+  "18 of 17". When WebKit stops counting at `G_MAXUINT` the label reads
+  "3 of 1000+" rather than pretending to a precision the browser does not have.
+
+### Added
+
+- **`src/find-label.c` plus `scripts/test-find-label-stage8.sh`, 22 checks.**
+  The formatting and stepping rules were pulled out into a glib-only file so a
+  harness can compile the production source and exercise it, instead of the
+  rules being buried in GTK callbacks that only a human clicking a window can
+  reach. The script also asserts the wiring that a harness cannot see: the
+  fresh-search flag is set and consumed, both step handlers go through the
+  shared helper, closing the bar clears the state, and the old "N matches"
+  wording is gone. Verified red first: dropping the clamp, dropping the
+  forward wraparound, removing the fresh-search flag, and restoring the old
+  label format each make the script fail.
 
 ### Fixed
 

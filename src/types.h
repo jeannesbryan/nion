@@ -251,6 +251,14 @@ struct _NionApp {
     GtkWidget *toolbar;
     GtkWidget *find_bar;
     GtkWidget *find_entry;
+    /* WebKit reports only the total match count, never which match is
+     * currently selected, so the position is tracked here. find_new_search
+     * exists because found-text fires for next/previous too: without a flag
+     * to tell a fresh search apart from a step, every step would reset the
+     * counter back to 1. */
+    guint find_total;
+    guint find_index;
+    gboolean find_new_search;
     GtkWidget *find_match_label;
     GtkWidget *find_prev_button;
     GtkWidget *find_next_button;
