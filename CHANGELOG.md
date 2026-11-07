@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+Three Onion-Location gaps, found by comparing NiOn against what Brave and Tor
+Browser do with the same header.
+
+### Fixed
+
+- **The advert is only honoured on a 2xx document response.** NiOn read the
+  `Onion-Location` header from whatever the main resource returned, including a
+  404 or 500. Error handlers routinely reuse the site template, so a missing
+  page could still advertise its `.onion` twin and send a reader from a page
+  that does not exist to one that may not either. `webkit_uri_response_get_status_code()`
+  is now checked before the header is read, and the HTML meta fallback sits
+  behind the same gate so it cannot slip through on an error page.
+
+### Changed
+
+- **The onion badge carries a drawn onion mark instead of a bare text label.**
+  The mark is drawn with cairo rather than shipped as an asset, because an asset
+  would need a meson install rule plus an icon-theme lookup that has to survive
+  the AppImage mount. Rendered at the real 14 px and magnified to check, three
+  thin concentric arcs antialias into one muddy band and the gaps made it look
+  like a bucket; a single inner arc landed as a smudge. A solid silhouette with
+  a pointed top is what stays crisp, so that is what shipped. The word "Onion"
+  stays next to it, which is what makes the badge readable.
+
+### Added
+
+- **`scripts/test-onion-location-stage7.sh`, 6 checks.** Guards the status gate
+  (including the ordering rule that the status is read before the header and
+  that the meta fallback sits after the gate), the drawn mark, and the safety
+  rules that must survive: https clearnet only, valid `.onion` candidate, and
+  preferred-onion persistence only from fresh detection. Verified red first:
+  removing the 2xx gate, removing the `page_ok` gate, and restoring the bare
+  text button each make the script fail.
+
 ## 2.2.3 — Stable
 
 Security release for the bundled Tor runtime. No source changes: every line

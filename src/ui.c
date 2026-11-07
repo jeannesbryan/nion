@@ -875,6 +875,45 @@ static gchar *nion_current_onion_for_tab(NionTab *tab)
     return remembered;
 }
 
+/* The onion mark is drawn instead of shipped as a file. An asset would need a
+ * meson install rule plus an icon-theme lookup that has to survive the AppImage
+ * mount, and a path that resolves by luck is worse than a few lines of cairo.
+ *
+ * Shape: a solid bulb with a pointed top. The first attempt used concentric
+ * arcs to suggest onion layers, which is closer to the Tor mark, but it was
+ * rendered at 14 px and magnified to check: three 1 px arcs with 1.5 px gaps
+ * antialias into one muddy band and the gaps turn it into something closer to
+ * a bucket. A single inner arc was tried next and landed as a smudge along the
+ * bottom edge. A plain silhouette is the only thing that stays crisp at this
+ * size, so that is what ships. The label next to it carries the word, which is
+ * what actually makes the badge readable. */
+static void draw_onion_mark(GtkDrawingArea *area, cairo_t *cr, int width, int height,
+                            gpointer user_data)
+{
+    (void)area;
+    (void)user_data;
+
+    const double w = (double)width;
+    const double h = (double)height;
+    const double base = MIN(w, h);
+    const double cx = w / 2.0;
+    const double cy = h * 0.60;
+    const double rx = base * 0.34;
+    const double ry = base * 0.31;
+    const double tip = base * 0.20;
+
+    cairo_set_source_rgba(cr, 0.54, 0.36, 0.71, 1.0);
+    cairo_move_to(cr, cx, cy - ry - tip);
+    cairo_curve_to(cr, cx + rx * 0.92, cy - ry * 0.75,
+                   cx + rx * 1.00, cy + ry * 0.90,
+                   cx, cy + ry);
+    cairo_curve_to(cr, cx - rx * 1.00, cy + ry * 0.90,
+                   cx - rx * 0.92, cy - ry * 0.75,
+                   cx, cy - ry - tip);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+}
+
 void nion_update_onion_button(NionApp *app)
 {
     if (!app || !app->onion_button)
@@ -2077,7 +2116,18 @@ void nion_build_ui(NionApp *app)
     app->forward_button = gtk_button_new_from_icon_name("go-next-symbolic");
     app->reload_button = gtk_button_new_from_icon_name("view-refresh-symbolic");
     app->home_button = gtk_button_new_from_icon_name("go-home-symbolic");
-    app->onion_button = gtk_button_new_with_label("Onion");
+    app->onion_button = gtk_button_new();
+    {
+        GtkWidget *onion_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        GtkWidget *onion_mark = gtk_drawing_area_new();
+        gtk_widget_set_size_request(onion_mark, 14, 14);
+        gtk_widget_set_valign(onion_mark, GTK_ALIGN_CENTER);
+        gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(onion_mark), draw_onion_mark, NULL, NULL);
+        gtk_widget_set_tooltip_text(onion_mark, "Tor onion service");
+        gtk_box_append(GTK_BOX(onion_box), onion_mark);
+        gtk_box_append(GTK_BOX(onion_box), gtk_label_new("Onion"));
+        gtk_button_set_child(GTK_BUTTON(app->onion_button), onion_box);
+    }
     gtk_widget_add_css_class(app->onion_button, "nion-onion-badge");
     gtk_widget_set_visible(app->onion_button, FALSE);
 

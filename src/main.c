@@ -260,20 +260,35 @@ static void nion_detect_onion_location(NionTab *tab)
     if (!nion_uri_is_https_clearnet(page_uri))
         return;
 
-    /* Prefer the standardized HTTP Onion-Location response header. */
+    /* The status gate comes before the header is even read. A clearnet page
+     * that answers 404 or 500 can still carry an Onion-Location advert (many
+     * error handlers reuse the site template), and forwarding a reader from a
+     * missing page to its .onion twin is worse than showing nothing. Brave
+     * and Tor Browser both honour the advert only on a successful document
+     * response, so NiOn matches them instead of accepting any response. */
+    gboolean page_ok = FALSE;
     WebKitWebResource *resource = webkit_web_view_get_main_resource(tab->web_view);
     if (resource) {
         WebKitURIResponse *response = webkit_web_resource_get_response(resource);
         if (response) {
-            SoupMessageHeaders *headers = webkit_uri_response_get_http_headers(response);
-            const gchar *header = headers ? soup_message_headers_get_one(headers, "Onion-Location") : NULL;
-            if (header && *header) {
-                nion_set_onion_location(tab, header);
-                if (tab->onion_location)
-                    return;
+            guint status = webkit_uri_response_get_status_code(response);
+            if (status >= 200 && status < 300) {
+                page_ok = TRUE;
+                SoupMessageHeaders *headers = webkit_uri_response_get_http_headers(response);
+                const gchar *header = headers ? soup_message_headers_get_one(headers, "Onion-Location") : NULL;
+                if (header && *header) {
+                    nion_set_onion_location(tab, header);
+                    if (tab->onion_location)
+                        return;
+                }
             }
         }
     }
+
+    /* The meta form is trusted on the same successful document only, so the
+     * gate above has to hold for this path too. */
+    if (!page_ok)
+        return;
 
     /* Tor also documents the equivalent HTML meta form. Keep the script tiny
      * and only read one value from the already-loaded top-level document. */
