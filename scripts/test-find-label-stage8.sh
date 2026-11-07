@@ -63,6 +63,18 @@ else:
     if re.search(r"find_index\s*=\s*1\s*;", body) and "if (app->find_new_search)" not in body:
         problems.append("on_find_found resets the position unconditionally, so steps would not advance")
 
+    # Measured on WebKitGTK 2.52.6: after a fresh search for "Tor" reported 5
+    # matches, the first search_next reported match_count as 1. Assigning that
+    # straight to find_total made the counter read "1 of 1" on the first click.
+    # The total must therefore be written only inside the fresh-search branch.
+    assign = re.search(r"find_total\s*=\s*match_count\s*;", body)
+    if not assign:
+        problems.append("on_find_found no longer stores the match total")
+    else:
+        branch = body.find("if (app->find_new_search)")
+        if branch < 0 or assign.start() < branch:
+            problems.append("match_count is stored outside the fresh-search branch, so a step would overwrite the total")
+
 # Both step handlers must move the position through the shared helper, so the
 # clamping rule lives in one place.
 for name, direction in (("on_find_prev_clicked", "-1"), ("on_find_next_clicked", "1")):

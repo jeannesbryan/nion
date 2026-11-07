@@ -1597,11 +1597,20 @@ void on_find_found(WebKitFindController *controller, guint match_count, gpointer
         return;
 
     NionApp *app = tab->app;
-    app->find_total = match_count;
-    /* found-text also fires for search_next/search_previous. Only a search
-     * that started fresh may reset the position, otherwise stepping forward
-     * would snap the label back to the first match every single time. */
+
+    /* found-text fires for search_next and search_previous as well, and on
+     * WebKitGTK 2.52.6 a step reports match_count as 1 regardless of how many
+     * matches the document actually has. Measured directly: a fresh search for
+     * "Tor" reported 5, then the first step reported 1. Trusting that number
+     * made the counter read "1 of 1" the moment anyone pressed next, which is
+     * exactly what this change is supposed to prevent.
+     *
+     * So the total is accepted only from a search that started fresh. A step
+     * cannot change how many matches a document contains, and if the page does
+     * change underneath an open bar, the reload path runs a fresh search and
+     * corrects the total anyway. */
     if (app->find_new_search) {
+        app->find_total = match_count;
         app->find_index = 1;
         app->find_new_search = FALSE;
     }

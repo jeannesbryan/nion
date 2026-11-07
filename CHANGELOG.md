@@ -18,6 +18,15 @@ NiOn against what Brave and Tor Browser do with the same header.
   "18 of 17". When WebKit stops counting at `G_MAXUINT` the label reads
   "3 of 1000+" rather than pretending to a precision the browser does not have.
 
+  One behaviour was found only by running the browser, and would have shipped
+  as a visible bug: on WebKitGTK 2.52.6, `found-text` reports `match_count` as
+  **1** for a next/previous step, no matter how many matches the document has.
+  Measured on the start page: a fresh search for "Tor" reported 5, then the
+  first step reported 1. Assigning that straight to the total made the counter
+  flip to "1 of 1" on the very first click, destroying the feature the moment
+  it was used. The total is now accepted only from a search that started fresh.
+  The wiring test asserts that rule, and reintroducing the bug fails it.
+
 ### Added
 
 - **`src/find-label.c` plus `scripts/test-find-label-stage8.sh`, 22 checks.**
