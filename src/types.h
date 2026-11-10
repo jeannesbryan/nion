@@ -108,6 +108,8 @@ struct _NionTab {
     gboolean mixed_content_run;
     gboolean mixed_content_other;
     gboolean content_filter_applied;
+    /* Reader mode (2.2.4): a user style sheet is attached to this tab. */
+    gboolean reader_mode;
 
     guint onion_cancel_retries;
     guint retry_source_id;

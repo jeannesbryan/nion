@@ -1,0 +1,130 @@
+/* Reader Mode stylesheet for NiOn.
+   Injected as a WebKit user style sheet when reader mode is on, so it stays
+   applied across navigations until it is switched off.
+
+   The approach is deliberately conservative: hide the furniture, then give the
+   remaining text a readable measure. It does not try to find "the article" by
+   scoring nodes, because guessing wrong and hiding the content is worse than
+   leaving a little chrome behind. */
+
+html {
+    background: #fbf9f4 !important;
+}
+
+body {
+    background: #fbf9f4 !important;
+    color: #1c1a17 !important;
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif !important;
+    font-size: 19px !important;
+    line-height: 1.62 !important;
+    margin: 0 auto !important;
+    max-width: 38rem !important;
+    padding: 2.6rem 1.25rem 4rem !important;
+    text-rendering: optimizeLegibility !important;
+}
+
+/* Page furniture. Kept as a list of element and role selectors rather than a
+   class-name guess list, so it behaves the same on most sites. */
+nav,
+aside,
+footer,
+form,
+button,
+[role="navigation"],
+[role="banner"],
+[role="complementary"],
+[role="contentinfo"],
+[aria-hidden="true"] {
+    display: none !important;
+}
+
+/* Headers are only hidden when they sit outside the text flow. A header that
+   wraps the whole body would otherwise take the article title with it. */
+body > header,
+body > div > header:not(:has(h1)) {
+    display: none !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: #14120f !important;
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif !important;
+    line-height: 1.25 !important;
+    margin: 1.8em 0 .6em !important;
+}
+
+h1 { font-size: 2rem !important; }
+
+p, li, blockquote, dd {
+    margin: 0 0 1.05em !important;
+}
+
+a {
+    color: #8a1c1c !important;
+    text-decoration: underline !important;
+    text-underline-offset: 2px !important;
+}
+
+img, video, figure {
+    height: auto !important;
+    max-width: 100% !important;
+}
+
+figure {
+    margin: 1.6em 0 !important;
+}
+
+blockquote {
+    border-left: 3px solid #c9bfae !important;
+    color: #4a453d !important;
+    margin-left: 0 !important;
+    padding-left: 1.1em !important;
+}
+
+pre, code, kbd, samp {
+    font-family: ui-monospace, "DejaVu Sans Mono", Menlo, monospace !important;
+    font-size: .88em !important;
+}
+
+pre {
+    background: #f0ebe0 !important;
+    border: 1px solid #ddd4c3 !important;
+    border-radius: 3px !important;
+    overflow-x: auto !important;
+    padding: .85em 1em !important;
+}
+
+code {
+    background: #f0ebe0 !important;
+    padding: .12em .3em !important;
+}
+
+pre code {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+}
+
+th, td {
+    border: 1px solid #ddd4c3 !important;
+    padding: .45em .6em !important;
+    text-align: left !important;
+}
+
+hr {
+    border: 0 !important;
+    border-top: 1px solid #ddd4c3 !important;
+    margin: 2em 0 !important;
+}
+
+/* Anything parked at the edges of the viewport is almost always a sticky bar,
+   cookie prompt, or share widget. */
+[style*="position: fixed"],
+[style*="position:fixed"],
+[style*="position: sticky"],
+[style*="position:sticky"] {
+    display: none !important;
+}

@@ -13,6 +13,7 @@
 #include "permission.h"
 #include "per-site.h"
 #include "privacy.h"
+#include "reader.h"
 #include "session.h"
 #include "tabs.h"
 #include "bookmarks.h"
@@ -1553,6 +1554,21 @@ void action_zoom_reset(GSimpleAction *action, GVariant *parameter, gpointer user
     nion_set_zoom(user_data, 1.0);
 }
 
+/* Reader mode (2.2.4). Toggles a user style sheet on the current tab; the sheet
+ * persists across navigation until it is switched off again. */
+void action_reader_mode(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action; (void)parameter;
+    NionApp *app = user_data;
+    NionTab *tab = nion_current_tab(app);
+    if (!tab)
+        return;
+
+    /* No generic status line exists (status_label tracks Tor), so the only
+     * feedback is that the page restyles itself immediately. */
+    nion_reader_toggle(tab);
+}
+
 static void nion_find_set_result(NionApp *app, const gchar *text)
 {
     if (app && app->find_match_label)
@@ -2380,6 +2396,7 @@ void nion_build_ui(NionApp *app)
     g_menu_append(menu, "New Identity", "win.new-identity");
     g_menu_append(menu, "Bridges (Censorship Circumvention)…", "win.bridges");
     g_menu_append(menu, "Find in Page", "win.find");
+    g_menu_append(menu, "Reader Mode", "win.reader-mode");
     g_menu_append(menu, "Reload Without Cache", "win.hard-reload");
     GMenu *zoom_menu = g_menu_new();
     g_menu_append(zoom_menu, "Zoom In", "win.zoom-in");

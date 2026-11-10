@@ -1,3 +1,16 @@
+## 2.2.4
+
+Reader Mode, bound to Ctrl+Alt+R and available from the menu. It attaches a user
+style sheet to the tab rather than rewriting the page, so it survives navigation
+until it is switched off and leaves the site untouched when it is. The sheet
+hides navigation, asides and footers, then gives the remaining text a serif face
+at a readable measure.
+
+Ctrl+Shift+R was the first binding, and it did nothing: hard reload already owned
+that combination, and a duplicate accelerator loses silently. Found only by
+running the app and pressing the key, which is why the guard test now compares
+the two accelerator strings instead of just checking that a binding exists.
+
 # Changelog
 
 ## Unreleased

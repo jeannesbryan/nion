@@ -58,6 +58,7 @@ void action_hard_reload(GSimpleAction *action, GVariant *parameter, gpointer use
 void action_zoom_in(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_zoom_out(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_zoom_reset(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+void action_reader_mode(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_find(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_print(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_fullscreen(GSimpleAction *action, GVariant *parameter, gpointer user_data);

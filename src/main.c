@@ -446,6 +446,7 @@ static void nion_install_actions(NionApp *app)
         { "zoom-in", action_zoom_in, NULL, NULL, NULL, {0} },
         { "zoom-out", action_zoom_out, NULL, NULL, NULL, {0} },
         { "zoom-reset", action_zoom_reset, NULL, NULL, NULL, {0} },
+        { "reader-mode", action_reader_mode, NULL, NULL, NULL, {0} },
         { "print", action_print, NULL, NULL, NULL, {0} },
         { "fullscreen", action_fullscreen, NULL, NULL, NULL, {0} },
         { "back", action_back, NULL, NULL, NULL, {0} },
@@ -478,6 +479,9 @@ static void nion_install_actions(NionApp *app)
     const gchar *hard_reload_accels[] = { "<Primary><Shift>r", NULL };
     const gchar *find_accels[] = { "<Primary>f", NULL };
     const gchar *zoom_in_accels[] = { "<Primary>plus", "<Primary>equal", "<Primary>KP_Add", NULL };
+    /* Reader mode: Ctrl+Alt+R. Ctrl+Shift+R is already hard reload, and a
+     * duplicate binding silently loses to whichever was registered first. */
+    const gchar *reader_accels[] = { "<Primary><Alt>r", NULL };
     const gchar *zoom_out_accels[] = { "<Primary>minus", "<Primary>KP_Subtract", NULL };
     const gchar *zoom_reset_accels[] = { "<Primary>0", "<Primary>KP_0", NULL };
     const gchar *print_accels[] = { "<Primary>p", NULL };
@@ -499,6 +503,7 @@ static void nion_install_actions(NionApp *app)
     gtk_application_set_accels_for_action(app->application, "win.hard-reload", hard_reload_accels);
     gtk_application_set_accels_for_action(app->application, "win.find", find_accels);
     gtk_application_set_accels_for_action(app->application, "win.zoom-in", zoom_in_accels);
+    gtk_application_set_accels_for_action(app->application, "win.reader-mode", reader_accels);
     gtk_application_set_accels_for_action(app->application, "win.zoom-out", zoom_out_accels);
     gtk_application_set_accels_for_action(app->application, "win.zoom-reset", zoom_reset_accels);
     gtk_application_set_accels_for_action(app->application, "win.print", print_accels);
