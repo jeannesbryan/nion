@@ -2,7 +2,7 @@
 
 NiOn is a minimal Linux browser built with C, GTK 4, and WebKitGTK 6. It opens both clearnet and Tor v3 `.onion` sites through its own bundled Tor runtime and is designed to fail closed rather than silently fall back to a direct connection.
 
-**Stable release: 2.2.4**  
+**Stable release: 2.2.5**  
 **Project focus: modular architecture, maintenance, compatibility, privacy/security fixes.**  
 **Platform: GNU/Linux x86_64 AppImage**
 
@@ -301,14 +301,14 @@ Private Window data does not use these normal persistence paths for private webs
 ## Run the AppImage
 
 ```bash
-chmod +x NiOn-2.2.4-x86_64.AppImage
-./NiOn-2.2.4-x86_64.AppImage
+chmod +x NiOn-2.2.5-x86_64.AppImage
+./NiOn-2.2.5-x86_64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-2.2.4-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./NiOn-2.2.5-x86_64.AppImage
 ```
 
 ## Build from source
@@ -331,8 +331,8 @@ Build the production AppImage with:
 Expected output:
 
 ```text
-dist/NiOn-2.2.4-x86_64.AppImage
-dist/NiOn-2.2.4-x86_64.AppImage.sha256
+dist/NiOn-2.2.5-x86_64.AppImage
+dist/NiOn-2.2.5-x86_64.AppImage.sha256
 ```
 
 See [BUILDING.md](BUILDING.md) for the complete build/release procedure and [TESTING.md](TESTING.md) for runtime validation.

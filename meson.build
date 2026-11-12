@@ -63,6 +63,7 @@ executable(
   'src/find-label.c',
   'src/reader.c',
   'src/navigation.c',
+  'src/load-error.c',
   'src/per-site.c',
   'src/content-filter.c',
   'src/permission.c',

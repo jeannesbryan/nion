@@ -13,6 +13,7 @@
 #include "navigation.h"
 #include "per-site.h"
 #include "content-filter.h"
+#include "load-error.h"
 #include "session.h"
 #include "tabs.h"
 #include "util.h"
@@ -488,15 +489,39 @@ gboolean on_webview_load_failed(WebKitWebView *web_view,
         return TRUE;
     }
 
-    /* Strict HTTPS (v2.1 #5): if an auto-upgraded https:// load fails (not a
-     * user-initiated cancellation), the site has no working HTTPS. Refuse the
-     * silent downgrade: clear the upgrade state and surface the explicit
-     * plain-HTTP warning so the user can choose (or decline) to continue over
-     * clearnet HTTP for this origin. Do not run this for http:// failing URIs
-     * (those come from the warning's Continue path, not from an upgrade). */
+    /* A frame WebKit abandoned because of a policy change is not a page
+     * failure. This is the error the strict-HTTPS upgrade below provokes: it
+     * ignores the http:// decision and starts the https:// twin, and WebKitGTK
+     * 2.52 then reports the dropped frame as
+     * WEBKIT_POLICY_ERROR_FRAME_LOAD_INTERRUPTED_BY_POLICY_CHANGE. Building an
+     * error page here replaced a perfectly healthy page (the https load that
+     * was already in flight) and only a manual reload recovered it.
+     *
+     * The interruption still keeps the provisional-onion retry alive, because
+     * a cancelled onion navigation before commit is worth one more attempt. */
+    if (nion_load_error_is_navigation_interruption(error)) {
+        if (load_event == WEBKIT_LOAD_STARTED && app->tor_ready &&
+            nion_uri_is_onion(failing_uri) && nion_schedule_onion_retry(tab, failing_uri)) {
+            /* load-failed is followed by LOAD_FINISHED. Mark this load as
+             * failed so LOAD_FINISHED does not overwrite the retry status. */
+            tab->load_failed = TRUE;
+            if (nion_current_tab(app) == tab)
+                nion_set_status(app, "● TOR CONNECTED — onion navigation interrupted, retrying…");
+        }
+        return TRUE;
+    }
+
+    /* Strict HTTPS (v2.1 #5): if an auto-upgraded https:// load fails, the site
+     * has no working HTTPS. Refuse the silent downgrade: clear the upgrade
+     * state and surface the explicit plain-HTTP warning so the user can choose
+     * (or decline) to continue over clearnet HTTP for this origin. Do not run
+     * this for http:// failing URIs (those come from the warning's Continue
+     * path, not from an upgrade).
+     *
+     * Cancellations never reach this point: they are classified as navigation
+     * interruptions at the top of this function and return early. */
     if (tab->https_upgrade_from && failing_uri &&
-        nion_uri_is_https_clearnet(failing_uri) &&
-        !g_error_matches(error, WEBKIT_NETWORK_ERROR, WEBKIT_NETWORK_ERROR_CANCELLED)) {
+        nion_uri_is_https_clearnet(failing_uri)) {
         gchar *original = g_steal_pointer(&tab->https_upgrade_from);
         g_clear_pointer(&tab->http_warning_uri, g_free);
         g_clear_object(&tab->http_warning_decision);
@@ -507,19 +532,9 @@ gboolean on_webview_load_failed(WebKitWebView *web_view,
         return TRUE;
     }
 
-    if (g_error_matches(error, WEBKIT_NETWORK_ERROR, WEBKIT_NETWORK_ERROR_CANCELLED)) {
-        if (load_event == WEBKIT_LOAD_STARTED && app->tor_ready &&
-            nion_uri_is_onion(failing_uri) && nion_schedule_onion_retry(tab, failing_uri)) {
-            /* load-failed is followed by LOAD_FINISHED. Mark this load as
-             * failed so LOAD_FINISHED does not overwrite the retry status. */
-            tab->load_failed = TRUE;
-            if (nion_current_tab(app) == tab)
-                nion_set_status(app, "● TOR CONNECTED — onion navigation interrupted, retrying…");
-        }
-        /* Cancellation is usually caused by another navigation. Never show
-         * WebKit's raw "Operation was cancelled" page to the user. */
-        return TRUE;
-    }
+    /* Cancellation and policy interruptions are classified together at the top
+     * of this function (nion_load_error_is_navigation_interruption). Neither is
+     * a page failure, so no error page may be built from them. */
 
     tab->load_failed = TRUE;
 

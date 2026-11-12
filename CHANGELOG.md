@@ -1,17 +1,33 @@
-## 2.2.4
-
-Reader Mode, bound to Ctrl+Alt+R and available from the menu. It attaches a user
-style sheet to the tab rather than rewriting the page, so it survives navigation
-until it is switched off and leaves the site untouched when it is. The sheet
-hides navigation, asides and footers, then gives the remaining text a serif face
-at a readable measure.
-
-Ctrl+Shift+R was the first binding, and it did nothing: hard reload already owned
-that combination, and a duplicate accelerator loses silently. Found only by
-running the app and pressing the key, which is why the guard test now compares
-the two accelerator strings instead of just checking that a binding exists.
-
 # Changelog
+
+## 2.2.5 — Stable
+
+A false error page, and a Tor bump that brings the daemon to 0.4.9.16.
+
+Following a link into `https://jeannesbryan.my.id/nostr` showed "Website
+unavailable through Tor / Frame load interrupted", and only a manual reload
+opened the page. The site is not at fault. Its directory URL is answered with a
+301 to the trailing-slash form, and that redirect downgrades the scheme to
+`http://`. NiOn's HTTPS-first rule then ignores the `http://` policy decision
+and starts the `https://` twin, which is exactly what it should do.
+
+What went wrong is the bookkeeping. WebKitGTK 2.52 reports the frame it just
+dropped as `WEBKIT_POLICY_ERROR_FRAME_LOAD_INTERRUPTED_BY_POLICY_CHANGE`, and
+the load-failed handler only knew `WEBKIT_NETWORK_ERROR_CANCELLED` as a
+non-failure. So a healthy `https://` load, already in flight, was replaced by an
+error page built from an error that described NiOn's own upgrade.
+
+Both codes are now classified in one place, `src/load-error.c`, which the test
+harness compiles from the production source. The classification had to be moved
+before any error page is built, so the ordering is asserted too: calling the
+helper with anything other than the real error object compiles cleanly and
+silently restores the bug.
+
+Tor runtime: Expert Bundle 16.0.1, daemon 0.4.9.15 to 0.4.9.16. The release
+notes for 0.4.9.16 are mostly directory-authority work, but this bundle is the
+first one that carries it, and staying on 0.4.9.15 meant missing the 0.4.9.13
+and 0.4.9.14 security releases as well.
+
 
 ## Unreleased
 
@@ -83,6 +99,19 @@ NiOn against what Brave and Tor Browser do with the same header.
   preferred-onion persistence only from fresh detection. Verified red first:
   removing the 2xx gate, removing the `page_ok` gate, and restoring the bare
   text button each make the script fail.
+
+## 2.2.4 — Stable
+
+Reader Mode, bound to Ctrl+Alt+R and available from the menu. It attaches a user
+style sheet to the tab rather than rewriting the page, so it survives navigation
+until it is switched off and leaves the site untouched when it is. The sheet
+hides navigation, asides and footers, then gives the remaining text a serif face
+at a readable measure.
+
+Ctrl+Shift+R was the first binding, and it did nothing: hard reload already owned
+that combination, and a duplicate accelerator loses silently. Found only by
+running the app and pressing the key, which is why the guard test now compares
+the two accelerator strings instead of just checking that a binding exists.
 
 ## 2.2.3 — Stable
 
