@@ -71,7 +71,19 @@ echo
 # it has to be large enough that a slow-but-working mirror is not mistaken for a
 # defect.
 PREPARE_TIMEOUT="${NION_PREPARE_TIMEOUT:-420}"
-RUN_TIMEOUT="${NION_RUN_TIMEOUT:-300}"
+# The outer bound must stay above the inner ones. It used to be 300s while the
+# prepare step alone was allowed 420s, so `timeout` killed the whole container
+# before dnf could finish, the leg looked like a packaging failure, and the
+# degraded-fixture path was never reached. Deriving it from PREPARE_TIMEOUT
+# means raising one bound can never again silently invalidate the other.
+RUN_TIMEOUT="${NION_RUN_TIMEOUT:-$((PREPARE_TIMEOUT + 300))}"
+
+if (( RUN_TIMEOUT <= PREPARE_TIMEOUT )); then
+  echo "FAIL: RUN_TIMEOUT (${RUN_TIMEOUT}s) must exceed PREPARE_TIMEOUT (${PREPARE_TIMEOUT}s)." >&2
+  echo "      Otherwise the outer timeout kills the leg before its prepare step" >&2
+  echo "      can finish, and that is misread as a packaging defect." >&2
+  exit 1
+fi
 
 fail=0
 degraded=()   # images where the host fixtures could not be installed
