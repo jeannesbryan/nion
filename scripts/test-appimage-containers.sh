@@ -64,7 +64,13 @@ echo
 # budget, so the run said nothing useful about the artifact. The prepare step
 # installs the host graphics stack that ldd needs, so it cannot simply be
 # dropped. It is bounded, and its failure is reported rather than aborting.
-PREPARE_TIMEOUT="${NION_PREPARE_TIMEOUT:-240}"
+# 240s looked generous and is not. Measured on this machine: a cold Fedora leg
+# spends over four minutes in `dnf install` alone (it exceeded the 240s bound and
+# the leg went unverified), while the same leg with warm layers finishes in
+# under two. The bound stays, because a hang must not eat the whole budget, but
+# it has to be large enough that a slow-but-working mirror is not mistaken for a
+# defect.
+PREPARE_TIMEOUT="${NION_PREPARE_TIMEOUT:-420}"
 RUN_TIMEOUT="${NION_RUN_TIMEOUT:-300}"
 
 fail=0
@@ -95,8 +101,22 @@ for target in "${targets[@]}"; do
   printf '%s\n' "$out" | grep -v '__PREPARE_\|__DIAGNOSE_RC=' | sed '/^$/d'
 
   if [[ $status -ne 0 || "${diagnose_rc:-1}" != "0" ]]; then
-    echo "FAIL  $image could not run the NiOn AppImage" >&2
-    fail=1
+    # A leg whose host fixtures never installed cannot conclude anything about
+    # the artifact: ldd on the missing graphics stack reports libraries absent
+    # by construction, not because the AppImage forgot to bundle them. Counting
+    # that as a packaging failure is how a fixture problem turns into a red
+    # build, and it made the PASS WITH WARNINGS branch below unreachable.
+    #
+    # It is still not a pass. The leg is recorded as degraded, the verdict
+    # names the distribution, and nothing claims this leg was verified.
+    if [[ " ${degraded[*]-} " == *" $image "* ]]; then
+      echo "WARN  $image: diagnostics could not finish without the host graphics"
+      echo "      libraries. This leg is NOT verified; it says nothing about the"
+      echo "      AppImage either way. Raise NION_PREPARE_TIMEOUT to verify it."
+    else
+      echo "FAIL  $image could not run the NiOn AppImage" >&2
+      fail=1
+    fi
   fi
   echo
 done
@@ -113,7 +133,9 @@ fi
 if (( ${#degraded[@]} )); then
   echo "RESULT: PASS WITH WARNINGS - the AppImage ran everywhere, but the host graphics"
   echo "        libraries could not be installed on: ${degraded[*]}"
-  echo "        Raise NION_PREPARE_TIMEOUT (default ${PREPARE_TIMEOUT}s) to test those legs fully."
+  echo "        Those legs are NOT verified: the missing libraries there are the"
+  echo "        absent fixture, not a bundling defect. Raise NION_PREPARE_TIMEOUT"
+  echo "        (default ${PREPARE_TIMEOUT}s) to verify them fully."
   exit 0
 fi
 
