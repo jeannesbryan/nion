@@ -1,38 +1,28 @@
 # Changelog
 
-## 2.2.5 — Stable
+## 2.2.6 — Stable
 
-A false error page, and a Tor bump that brings the daemon to 0.4.9.16.
+A session that came back with the right shape and the wrong addresses, a tab
+strip that could not name its own tabs, the find bar position counter, and three
+Onion-Location gaps found by comparing NiOn against what Brave and Tor Browser do
+with the same header.
 
-Following a link into `https://jeannesbryan.my.id/nostr` showed "Website
-unavailable through Tor / Frame load interrupted", and only a manual reload
-opened the page. The site is not at fault. Its directory URL is answered with a
-301 to the trailing-slash form, and that redirect downgrades the scheme to
-`http://`. NiOn's HTTPS-first rule then ignores the `http://` policy decision
-and starts the `https://` twin, which is exactly what it should do.
+The session bug was the one worth the release. A restored tab is a shell: its
+address waits in the tab until Tor finishes bootstrapping, and the startup save
+runs inside that window. The save path resolved addresses by hand and never asked
+the tab for its pending one, so every tab was written without an address. Closing
+or crashing before bootstrap finished replaced the whole session with blank tabs,
+while the tab count, the active index and the pinned and mute flags all came back
+correctly. A four-tab session seeded with three URLs was measured coming back as
+four tabs with zero addresses. Both recording paths now go through one helper that
+owns all four address sources, so a caller cannot forget one of them again.
 
-What went wrong is the bookkeeping. WebKitGTK 2.52 reports the frame it just
-dropped as `WEBKIT_POLICY_ERROR_FRAME_LOAD_INTERRUPTED_BY_POLICY_CHANGE`, and
-the load-failed handler only knew `WEBKIT_NETWORK_ERROR_CANCELLED` as a
-non-failure. So a healthy `https://` load, already in flight, was replaced by an
-error page built from an error that described NiOn's own upgrade.
-
-Both codes are now classified in one place, `src/load-error.c`, which the test
-harness compiles from the production source. The classification had to be moved
-before any error page is built, so the ordering is asserted too: calling the
-helper with anything other than the real error object compiles cleanly and
-silently restores the bug.
-
-Tor runtime: Expert Bundle 16.0.1, daemon 0.4.9.15 to 0.4.9.16. The release
-notes for 0.4.9.16 are mostly directory-authority work, but this bundle is the
-first one that carries it, and staying on 0.4.9.15 meant missing the 0.4.9.13
-and 0.4.9.14 security releases as well.
-
-
-## Unreleased
-
-Find bar position counter, plus three Onion-Location gaps found by comparing
-NiOn against what Brave and Tor Browser do with the same header.
+The tab strip had the opposite problem: nothing was lost, but nothing could be
+found. Past the point where tabs stop fitting, GTK 4 scrolls the strip and gives
+the off-screen tabs no way to be identified, so tab 12 of 14 meant clicking an
+arrow and reading until it appeared. The strip now has a menu that lists every
+open tab, marks the current one and the ones the strip cannot show, and jumps to
+whichever row is activated.
 
 ### Changed
 
@@ -99,6 +89,96 @@ NiOn against what Brave and Tor Browser do with the same header.
   preferred-onion persistence only from fresh detection. Verified red first:
   removing the 2xx gate, removing the `page_ok` gate, and restoring the bare
   text button each make the script fail.
+
+### Fixed
+
+- **A restored session keeps its addresses before Tor bootstraps.** A tab brought
+  back at startup is a shell: its address waits in `tab->restore_uri` until Tor is
+  ready and navigation starts. `src/session.c` resolved the address itself and
+  never consulted that field, while `src/tabs.c` already did, so the save that runs
+  immediately after restore wrote every tab without a `uri=` line. Measured before
+  the fix: four tabs seeded with three URLs returned as `tab-count=4` with zero
+  addresses. Closing or crashing inside the bootstrap window (5 to 20 seconds on
+  this host) then replaced all restored tabs with blank ones, and the tab count,
+  active index, pinned and mute flags all survived, which is what made the damage
+  easy to miss. Both recording paths now resolve addresses through
+  `nion_tab_recorded_uri()`, which owns the four sources (display override, live
+  WebView, pending restore, suspended tab). Verified against a real Tor bootstrap
+  as well: two public addresses stayed in `session.ini` after the pages loaded,
+  WebKit history blobs included. A session file pointing at `127.0.0.1` is still
+  refused by the Tor-only policy and becomes a blank tab, which is the correct
+  outcome and was confirmed by tracing the file rather than assumed.
+
+- **`scripts/test-session-restore.sh`.** Drives the real binary instead of grepping:
+  seeds a four-tab session (one pinned, one muted, one blank), runs NiOn with
+  `NION_TOR_BINARY=/bin/false` so Tor never becomes ready, waits for the startup
+  save to appear, then asserts every address and flag survived. Verified red first:
+  removing the pending-restore branch, letting `about:blank` through, and preferring
+  the live address over the pending one each make it fail.
+
+### Added
+
+- **The tab strip reports every tab, not just the visible ones.** An overflow
+  control at the end of the strip opens a menu listing all open tabs, with the
+  current tab and the tabs the strip cannot show both marked, pinned and suspended
+  markers preserved, and `Ctrl+Shift+A` as a shortcut that does not depend on
+  seeing the button. A restored tab that never finished loading has no title, so
+  those rows show the host of the address they were restored from instead of
+  "New Tab".
+
+  Which tabs are hidden is measured, not estimated. Measured on GTK 4 with the real
+  layout at 1100 px: a tab that does not fit is not allocated at all and reports
+  width 0, while visible tabs report real bounds. The first implementation compared
+  each label's right edge against the notebook width minus a guessed arrow-width
+  constant; the guess was unnecessary and wrong, reporting 0 hidden while only 6 of
+  14 tabs were on screen. Hidden now means "no allocated area".
+
+  Two bugs surfaced only by running it. `gtk_notebook_set_action_widget()` owns a
+  single slot per pack type, so adding the overflow button and then the new-tab
+  button meant the second call destroyed the first: the menu still built its rows,
+  but popping it up hit a freed object and only a `Gtk-CRITICAL` showed for it. And
+  a popover attached only with `gtk_widget_set_parent()` had no surface to open
+  against (the parent lookup returned NULL), so it is a `GtkMenuButton`, the same
+  pattern the download rows already use.
+
+- **`scripts/test-tab-overflow.sh`.** Asserts the structure, then drives the real
+  window: three tabs (nothing hidden, one row each), fourteen tabs (hidden >= 1, one
+  row each, and activating a row must land on a tab the strip cannot show), and no
+  `Gtk-CRITICAL` during the run. Verified red first: forcing the hidden count to 0,
+  restoring the second action-widget call, dropping the tab switch, and leaving the
+  popover un-rebuilt on open each make it fail. The toolbar button itself is not
+  driven end to end, because synthetic clicks do not reach this widget tree here
+  (mouse events are dropped even for the new-tab button); its show handler is held
+  by a static assertion, and that gap is recorded in the test rather than left
+  silent.
+
+## 2.2.5 — Stable
+
+A false error page, and a Tor bump that brings the daemon to 0.4.9.16.
+
+Following a link into `https://jeannesbryan.my.id/nostr` showed "Website
+unavailable through Tor / Frame load interrupted", and only a manual reload
+opened the page. The site is not at fault. Its directory URL is answered with a
+301 to the trailing-slash form, and that redirect downgrades the scheme to
+`http://`. NiOn's HTTPS-first rule then ignores the `http://` policy decision
+and starts the `https://` twin, which is exactly what it should do.
+
+What went wrong is the bookkeeping. WebKitGTK 2.52 reports the frame it just
+dropped as `WEBKIT_POLICY_ERROR_FRAME_LOAD_INTERRUPTED_BY_POLICY_CHANGE`, and
+the load-failed handler only knew `WEBKIT_NETWORK_ERROR_CANCELLED` as a
+non-failure. So a healthy `https://` load, already in flight, was replaced by an
+error page built from an error that described NiOn's own upgrade.
+
+Both codes are now classified in one place, `src/load-error.c`, which the test
+harness compiles from the production source. The classification had to be moved
+before any error page is built, so the ordering is asserted too: calling the
+helper with anything other than the real error object compiles cleanly and
+silently restores the bug.
+
+Tor runtime: Expert Bundle 16.0.1, daemon 0.4.9.15 to 0.4.9.16. The release
+notes for 0.4.9.16 are mostly directory-authority work, but this bundle is the
+first one that carries it, and staying on 0.4.9.15 meant missing the 0.4.9.13
+and 0.4.9.14 security releases as well.
 
 ## 2.2.4 — Stable
 
