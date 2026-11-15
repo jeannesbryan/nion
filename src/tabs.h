@@ -15,6 +15,13 @@ void nion_close_tab(NionTab *tab);
 void nion_tab_free(gpointer data);
 gint nion_count_pinned_tabs(NionApp *app);
 void nion_set_tab_pinned(NionTab *tab, gboolean pinned, gboolean schedule_save);
+
+/* The address that identifies a tab when it is recorded outside the live
+ * WebView: session save, closed-tab memory. Resolves the display override, the
+ * live WebView URI, the pending-restore URI and the suspended-tab URI, so no
+ * caller has to remember all four cases. Returns NULL for a tab with no real
+ * address (blank/home-only). The returned pointer is borrowed, never copied. */
+const gchar *nion_tab_recorded_uri(NionTab *tab);
 void nion_update_tab_audio_button(NionTab *tab);
 void on_webview_muted_changed(WebKitWebView *web_view, GParamSpec *pspec, gpointer user_data);
 GtkWidget *nion_make_tab_label(NionTab *tab);

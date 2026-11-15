@@ -11,7 +11,7 @@ pass() { echo "PASS: $*"; }
 grep -rq 'gboolean pinned;' "$SRC" || fail "per-tab pinned state missing"
 grep -rq '"pinned", tab->pinned' "$SRC" || fail "session pinned save missing"
 grep -rq 'g_key_file_has_key(session, group, "pinned"' "$SRC" || fail "backward-compatible pinned restore missing"
-grep -rq 'nion_set_tab_pinned(restored_tab, pinned, FALSE)' "$SRC" || fail "restored pinned state not applied"
+grep -rq 'session_set_tab_pinned(restored_tab, pinned, FALSE)' "$SRC" || fail "restored pinned state not applied"
 grep -rq 'nion_set_tab_pinned(tab, closed->pinned, TRUE)' "$SRC" || fail "closed-tab pin recovery missing"
 grep -rq 'gtk_notebook_reorder_child' "$SRC" || fail "pinned-left reorder enforcement missing"
 grep -rq 'normalizing_tab_order' "$SRC" || fail "reorder recursion guard missing"

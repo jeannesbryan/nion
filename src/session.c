@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "session.h"
+#include "tabs.h"
 #include "types.h"
 #include "util.h"
 #include "navigation.h"
@@ -31,7 +32,7 @@ static NionTab *nion_new_tab(NionApp *app, const gchar *uri, gboolean select)
         ? s_session_callbacks.new_tab(app, uri, select) : NULL;
 }
 
-static void nion_set_tab_pinned(NionTab *tab, gboolean pinned, gboolean schedule_save)
+static void session_set_tab_pinned(NionTab *tab, gboolean pinned, gboolean schedule_save)
 {
     if (s_session_callbacks.set_tab_pinned)
         s_session_callbacks.set_tab_pinned(tab, pinned, schedule_save);
@@ -67,7 +68,7 @@ static void nion_set_status(NionApp *app, const gchar *text)
         s_session_callbacks.set_status(app, text);
 }
 
-static void nion_closed_tab_free(gpointer data)
+static void session_closed_tab_free(gpointer data)
 {
     if (s_session_callbacks.closed_tab_free)
         s_session_callbacks.closed_tab_free(data);
@@ -121,13 +122,11 @@ void nion_save_session(NionApp *app, gboolean clean_shutdown)
                                webkit_web_view_get_is_muted(tab->web_view));
         g_key_file_set_boolean(session, group, "pinned", tab->pinned);
 
-        const gchar *uri = tab->display_uri_override;
-        if (!uri || !*uri)
-            uri = webkit_web_view_get_uri(tab->web_view);
-        if (tab->discarded && tab->discard_uri)
-            uri = tab->discard_uri;
-        if (uri && *uri && !g_str_equal(uri, "about:blank") &&
-            strlen(uri) <= NION_MAX_SAVED_URI_BYTES)
+        /* Never hand-roll the address lookup here: a tab restored moments ago
+         * (or suspended in the background) has no WebView URI and would be
+         * written without an address at all. */
+        const gchar *uri = nion_tab_recorded_uri(tab);
+        if (uri && strlen(uri) <= NION_MAX_SAVED_URI_BYTES)
             g_key_file_set_string(session, group, "uri", uri);
 
         /* Never persist the synthetic WebProcess recovery page as opaque
@@ -305,7 +304,7 @@ gboolean nion_restore_saved_session(NionApp *app)
 
         if (restored_tab) {
             webkit_web_view_set_is_muted(restored_tab->web_view, muted);
-            nion_set_tab_pinned(restored_tab, pinned, FALSE);
+            session_set_tab_pinned(restored_tab, pinned, FALSE);
             restored++;
         }
 
@@ -398,7 +397,7 @@ static void on_crash_recovery_start_fresh_clicked(GtkButton *button, gpointer us
         gtk_notebook_remove_page(notebook, 0);
 
     if (app->closed_tabs)
-        g_queue_clear_full(app->closed_tabs, nion_closed_tab_free);
+        g_queue_clear_full(app->closed_tabs, session_closed_tab_free);
 
     app->restored_previous_session = FALSE;
     nion_new_tab(app, NULL, TRUE);

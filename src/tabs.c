@@ -87,23 +87,40 @@ void nion_closed_tab_free(gpointer data)
     g_free(closed);
 }
 
+const gchar *nion_tab_recorded_uri(NionTab *tab)
+{
+    if (!tab)
+        return NULL;
+
+    const gchar *uri = tab->display_uri_override;
+    if (!uri || !*uri)
+        uri = webkit_web_view_get_uri(tab->web_view);
+
+    /* A restored tab is a shell with restore_pending=TRUE until Tor is ready;
+     * its WebView has no URI yet, so tab->restore_uri is the only address it
+     * owns. A suspended tab points its WebView at the internal Suspended
+     * document, so its real address lives in tab->discard_uri. Both cases are
+     * resolved here, once, instead of being re-derived at every call site
+     * (the session save forgot the restore_uri branch and silently dropped
+     * every URL restored before a Tor bootstrap finished). */
+    if ((!uri || !*uri || g_str_equal(uri, "about:blank")) &&
+        tab->restore_uri && *tab->restore_uri)
+        uri = tab->restore_uri;
+    if (tab->discarded && tab->discard_uri && *tab->discard_uri)
+        uri = tab->discard_uri;
+
+    if (!uri || !*uri || g_str_equal(uri, "about:blank"))
+        return NULL;
+    return uri;
+}
+
 static const gchar *nion_tab_reopenable_uri(NionTab *tab)
 {
     if (!tab || tab->home_page)
         return NULL;
 
-    const gchar *uri = NULL;
-    if (tab->display_uri_override && *tab->display_uri_override)
-        uri = tab->display_uri_override;
-    else
-        uri = webkit_web_view_get_uri(tab->web_view);
-
-    if ((!uri || !*uri || g_str_equal(uri, "about:blank")) &&
-        tab->restore_uri && *tab->restore_uri)
-        uri = tab->restore_uri;
-
-    if (!uri || !*uri || g_str_equal(uri, "about:blank") ||
-        strlen(uri) > NION_MAX_SAVED_URI_BYTES)
+    const gchar *uri = nion_tab_recorded_uri(tab);
+    if (!uri || strlen(uri) > NION_MAX_SAVED_URI_BYTES)
         return NULL;
 
     gchar *validation = NULL;
