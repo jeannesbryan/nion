@@ -237,6 +237,12 @@ struct _NionApp {
     gboolean updating_site_controls;
     GtkWidget *bookmark_button;
     GtkWidget *new_tab_button;
+    /* Tab strip overflow (Priority+). The notebook scrolls its own strip, but a
+     * scrolled-out tab cannot be identified or reached by name, so the strip
+     * gets an explicit overflow menu that lists every open tab. */
+    GtkWidget *tab_overflow_button;
+    GtkWidget *tab_overflow_popover;
+    GtkWidget *tab_overflow_box;
     GtkWidget *progress_bar;
     GtkWidget *status_label;
     GtkWidget *downloads_panel;

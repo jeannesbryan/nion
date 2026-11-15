@@ -452,6 +452,7 @@ static void nion_install_actions(NionApp *app)
         { "back", action_back, NULL, NULL, NULL, {0} },
         { "forward", action_forward, NULL, NULL, NULL, {0} },
         { "next-tab", action_next_tab, NULL, NULL, NULL, {0} },
+        { "show-all-tabs", action_show_all_tabs, NULL, NULL, NULL, {0} },
         { "previous-tab", action_previous_tab, NULL, NULL, NULL, {0} },
         { "downloads", action_downloads, NULL, NULL, NULL, {0} },
         { "bookmark-page", action_bookmark_page, NULL, NULL, NULL, {0} },
@@ -490,6 +491,9 @@ static void nion_install_actions(NionApp *app)
     const gchar *forward_accels[] = { "<Alt>Right", NULL };
     const gchar *next_tab_accels[] = { "<Primary>Tab", "<Primary>Page_Down", NULL };
     const gchar *previous_tab_accels[] = { "<Primary><Shift>Tab", "<Primary>Page_Up", NULL };
+    /* Ctrl+Shift+A: the tab strip cannot name a scrolled-out tab, so the
+     * overflow menu needs a shortcut that does not depend on seeing the button. */
+    const gchar *show_all_tabs_accels[] = { "<Primary><Shift>a", NULL };
     const gchar *downloads_accels[] = { "<Primary>j", NULL };
     const gchar *bookmark_accels[] = { "<Primary>d", NULL };
 
@@ -512,6 +516,7 @@ static void nion_install_actions(NionApp *app)
     gtk_application_set_accels_for_action(app->application, "win.forward", forward_accels);
     gtk_application_set_accels_for_action(app->application, "win.next-tab", next_tab_accels);
     gtk_application_set_accels_for_action(app->application, "win.previous-tab", previous_tab_accels);
+    gtk_application_set_accels_for_action(app->application, "win.show-all-tabs", show_all_tabs_accels);
     gtk_application_set_accels_for_action(app->application, "win.downloads", downloads_accels);
     gtk_application_set_accels_for_action(app->application, "win.bookmark-page", bookmark_accels);
 }

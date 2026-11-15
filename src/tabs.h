@@ -26,6 +26,22 @@ void nion_update_tab_audio_button(NionTab *tab);
 void on_webview_muted_changed(WebKitWebView *web_view, GParamSpec *pspec, gpointer user_data);
 GtkWidget *nion_make_tab_label(NionTab *tab);
 
+/* ---- Tab strip overflow (Priority+) ---- */
+
+/* How many tabs are currently clipped out of the strip: no allocated area, or
+ * lying outside the region the action widgets leave free. Measured from widget
+ * geometry, because GtkNotebook hides its own scroll arrows and offers no
+ * "visible pages" API. Returns 0 while the notebook is not yet allocated. */
+guint nion_count_hidden_tabs(NionApp *app);
+/* Build the strip's overflow button (a "all tabs" popover). The widget is owned
+ * by the caller, which stores it as a notebook action widget. */
+GtkWidget *nion_build_tab_overflow_button(NionApp *app);
+/* Repopulate the overflow menu from the live tab list. */
+void nion_rebuild_tab_overflow(NionApp *app);
+/* Open the overflow menu (toolbar button and Ctrl+Shift+A both land here). */
+void nion_show_tab_overflow(NionApp *app);
+/* Env-gated (NION_TAB_DEBUG) one-line trace of the same measurement. */
+void nion_log_tab_overflow(NionApp *app, const gchar *when);
 /* ---- Background Tab Discard (v2.1 #1) ---- */
 
 /* Refresh a tab's "last active" timestamp (call when it becomes current). */

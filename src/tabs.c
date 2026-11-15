@@ -999,3 +999,291 @@ void nion_discard_idle_tabs(NionApp *app)
             nion_tab_discard(tab);
     }
 }
+/* ---- Tab strip overflow (Priority+) ----
+ *
+ * GtkNotebook keeps every tab reachable once the strip overflows, but only by
+ * clicking its scroll arrows until the wanted tab appears: the hidden tabs have
+ * no names and no list, so tab 12 of 14 cannot be found except by scrolling and
+ * reading. The strip therefore gets an overflow menu that names every open tab
+ * and jumps straight to it.
+ *
+ * Which tabs are hidden is measured, not estimated. Measured on GTK 4 with this
+ * layout: tabs that do not fit are not allocated at all (width 0), while the
+ * visible ones report their real geometry, so there is no partially drawn tail
+ * to reason about and no arrow-width constant to guess. A tab is hidden when its
+ * label has no area or lies outside the strip the action widgets leave free.
+ */
+
+guint nion_count_hidden_tabs(NionApp *app)
+{
+    if (!app || !app->notebook)
+        return 0;
+
+    GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    if (pages <= 0)
+        return 0;
+
+    gint notebook_width = gtk_widget_get_width(app->notebook);
+
+    guint hidden = 0;
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        GtkWidget *label = page ? gtk_notebook_get_tab_label(notebook, page) : NULL;
+        if (!label) {
+            hidden++;
+            continue;
+        }
+        graphene_rect_t bounds;
+        if (!gtk_widget_compute_bounds(label, app->notebook, &bounds) ||
+            bounds.size.width <= 0.5f || bounds.size.height <= 0.5f) {
+            hidden++;
+            continue;
+        }
+        if (bounds.origin.x < -0.5f ||
+            (notebook_width > 0 &&
+             bounds.origin.x + bounds.size.width > (gfloat)notebook_width + 0.5f))
+            hidden++;
+    }
+    return hidden;
+}
+
+/* One row of the overflow menu. Holds the page widget behind a weak pointer, so
+ * a tab closed while the menu is open turns the row into a no-op instead of
+ * letting the click land on freed memory. */
+typedef struct {
+    NionApp *app;
+    GtkWidget *page;
+} NionTabOverflowRow;
+
+static void nion_tab_overflow_row_free(gpointer data)
+{
+    NionTabOverflowRow *row = data;
+    if (!row)
+        return;
+    if (row->page)
+        g_object_remove_weak_pointer(G_OBJECT(row->page), (gpointer *)&row->page);
+    g_free(row);
+}
+
+static void on_tab_overflow_row_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    NionTabOverflowRow *row = user_data;
+    if (!row || !row->app || !row->app->notebook)
+        return;
+
+    if (row->app->tab_overflow_popover)
+        gtk_popover_popdown(GTK_POPOVER(row->app->tab_overflow_popover));
+
+    if (!row->page)
+        return;
+    gint index = gtk_notebook_page_num(GTK_NOTEBOOK(row->app->notebook), row->page);
+    if (index < 0)
+        return;
+    gtk_notebook_set_current_page(GTK_NOTEBOOK(row->app->notebook), index);
+}
+
+/* A restored tab that never finished loading has no page title yet, so every
+ * such row would read "New Tab" and the menu would not identify anything. The
+ * address it was restored from is known, so its host is shown instead. Always
+ * returns an allocated string: the caller frees it. */
+static gchar *nion_tab_overflow_title(NionTab *tab)
+{
+    if (!tab)
+        return g_strdup("Tab");
+
+    if (tab->title_label) {
+        const gchar *text = gtk_label_get_label(GTK_LABEL(tab->title_label));
+        if (text && *text && !g_str_equal(text, "New Tab"))
+            return g_strdup(text);
+    }
+
+    const gchar *uri = nion_tab_recorded_uri(tab);
+    if (uri) {
+        GUri *parsed = g_uri_parse(uri, G_URI_FLAGS_NONE, NULL);
+        if (parsed) {
+            const gchar *host = g_uri_get_host(parsed);
+            gchar *result = (host && *host) ? g_strdup(host) : NULL;
+            g_uri_unref(parsed);
+            if (result)
+                return result;
+        }
+    }
+    return g_strdup("New Tab");
+}
+
+static GtkWidget *nion_tab_overflow_row(NionApp *app, NionTab *tab,
+                                        gboolean current, gboolean hidden)
+{
+    GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_margin_start(row_box, 4);
+    gtk_widget_set_margin_end(row_box, 8);
+
+    /* Current tab and out-of-sight tabs are marked by text, not colour alone. */
+    GtkWidget *marker = gtk_label_new(current ? "\u25b8" : (hidden ? "\u00b7" : " "));
+    gtk_widget_add_css_class(marker, "nion-tab-overflow-marker");
+    gtk_box_append(GTK_BOX(row_box), marker);
+
+    if (tab && tab->pinned) {
+        GtkWidget *pin = gtk_label_new("\U0001f4cc");
+        gtk_widget_add_css_class(pin, "nion-tab-pin");
+        gtk_box_append(GTK_BOX(row_box), pin);
+    }
+    if (tab && tab->discarded) {
+        GtkWidget *suspend = gtk_label_new("\U0001f4a4");
+        gtk_widget_add_css_class(suspend, "nion-tab-suspend");
+        gtk_box_append(GTK_BOX(row_box), suspend);
+    }
+
+    gchar *row_title = nion_tab_overflow_title(tab);
+    GtkWidget *label = gtk_label_new(row_title);
+    g_free(row_title);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+    gtk_label_set_max_width_chars(GTK_LABEL(label), 40);
+    gtk_widget_set_hexpand(label, TRUE);
+    gtk_box_append(GTK_BOX(row_box), label);
+
+    GtkWidget *button = gtk_button_new();
+    gtk_button_set_child(GTK_BUTTON(button), row_box);
+    gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+    gtk_widget_add_css_class(button, "flat");
+    if (tab && tab->tab_label_box)
+        gtk_widget_set_tooltip_text(button, gtk_widget_get_tooltip_text(tab->tab_label_box));
+    if (current)
+        gtk_widget_add_css_class(button, "nion-tab-overflow-current");
+
+    NionTabOverflowRow *row = g_new0(NionTabOverflowRow, 1);
+    row->app = app;
+    row->page = tab ? tab->page : NULL;
+    if (row->page)
+        g_object_add_weak_pointer(G_OBJECT(row->page), (gpointer *)&row->page);
+    g_signal_connect_data(button, "clicked", G_CALLBACK(on_tab_overflow_row_clicked),
+                          row, (GClosureNotify)nion_tab_overflow_row_free, 0);
+    return button;
+}
+
+void nion_rebuild_tab_overflow(NionApp *app)
+{
+    if (!app || !app->tab_overflow_box || !app->notebook)
+        return;
+
+    GtkWidget *child = gtk_widget_get_first_child(app->tab_overflow_box);
+    while (child) {
+        GtkWidget *next = gtk_widget_get_next_sibling(child);
+        gtk_box_remove(GTK_BOX(app->tab_overflow_box), child);
+        child = next;
+    }
+
+    GtkNotebook *notebook = GTK_NOTEBOOK(app->notebook);
+    gint pages = gtk_notebook_get_n_pages(notebook);
+    gint current = gtk_notebook_get_current_page(notebook);
+    guint hidden = nion_count_hidden_tabs(app);
+
+    gchar *heading_text = (pages <= 0)
+        ? g_strdup("No open tabs")
+        : (hidden > 0
+            ? g_strdup_printf("%d tabs \u00b7 %u not visible", pages, hidden)
+            : g_strdup_printf("%d tabs", pages));
+    GtkWidget *heading = gtk_label_new(heading_text);
+    gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
+    gtk_widget_add_css_class(heading, "nion-tab-overflow-heading");
+    gtk_widget_set_margin_bottom(heading, 4);
+    gtk_box_append(GTK_BOX(app->tab_overflow_box), heading);
+    g_free(heading_text);
+
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (!tab)
+            continue;
+        GtkWidget *label = gtk_notebook_get_tab_label(notebook, page);
+        graphene_rect_t bounds;
+        gboolean visible = label &&
+            gtk_widget_compute_bounds(label, app->notebook, &bounds) &&
+            bounds.size.width > 0.5f && bounds.size.height > 0.5f;
+        gtk_box_append(GTK_BOX(app->tab_overflow_box),
+                       nion_tab_overflow_row(app, tab, i == current, !visible));
+    }
+
+    if (g_getenv("NION_TAB_DEBUG")) {
+        gint rows = 0;
+        for (GtkWidget *w = gtk_widget_get_first_child(app->tab_overflow_box);
+             w; w = gtk_widget_get_next_sibling(w))
+            rows++;
+        g_printerr("tab-overflow-menu rows=%d tabs=%d hidden=%u current=%d\n",
+                   rows, pages, hidden, current);
+    }
+}
+
+void nion_show_tab_overflow(NionApp *app)
+{
+    if (!app || !app->tab_overflow_button || !app->tab_overflow_popover)
+        return;
+    nion_rebuild_tab_overflow(app);
+    gtk_menu_button_popup(GTK_MENU_BUTTON(app->tab_overflow_button));
+}
+
+/* g_signal_connect_swapped() with a one-argument function would have to cast
+ * between incompatible function types, so the signal gets a callback with the
+ * signature it actually has. */
+static void on_tab_overflow_popover_show(GtkPopover *popover, gpointer user_data)
+{
+    (void)popover;
+    nion_rebuild_tab_overflow((NionApp *)user_data);
+}
+
+GtkWidget *nion_build_tab_overflow_button(NionApp *app)
+{
+    /* GtkMenuButton, not a plain button with a hand-parented popover: a popover
+     * attached only with gtk_widget_set_parent() had no surface to open against
+     * here (gdk_surface_new_popup reported a NULL parent), while GtkMenuButton
+     * owns the anchoring and behaves like the download row menus. */
+    GtkWidget *button = gtk_menu_button_new();
+    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), "pan-down-symbolic");
+    gtk_widget_add_css_class(button, "flat");
+    gtk_widget_add_css_class(button, "nion-tab-overflow");
+    gtk_widget_set_tooltip_text(button, "All tabs (Ctrl+Shift+A)");
+
+    GtkWidget *popover = gtk_popover_new();
+    GtkWidget *scroller = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scroller), 420);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scroller), TRUE);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(scroller), TRUE);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_set_margin_top(box, 6);
+    gtk_widget_set_margin_bottom(box, 6);
+    gtk_widget_set_margin_start(box, 6);
+    gtk_widget_set_margin_end(box, 6);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), box);
+    gtk_popover_set_child(GTK_POPOVER(popover), scroller);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+
+    app->tab_overflow_button = button;
+    app->tab_overflow_popover = popover;
+    app->tab_overflow_box = box;
+
+    /* The menu content is rebuilt every time it opens, so a tab closed in the
+     * meantime can never leave a dead row behind. */
+    g_signal_connect(popover, "show",
+                     G_CALLBACK(on_tab_overflow_popover_show), app);
+    return button;
+}
+
+/* Env-gated trace so a test can assert the measurement without reading pixels.
+ * Off by default: a browser that chatters on stderr in normal use is noise. */
+void nion_log_tab_overflow(NionApp *app, const gchar *when)
+{
+    if (!g_getenv("NION_TAB_DEBUG"))
+        return;
+    if (!app || !app->notebook)
+        return;
+    gint pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook));
+    gint width = gtk_widget_get_width(app->notebook);
+    g_printerr("tab-overflow when=%s width=%d total=%d hidden=%u\n",
+               when ? when : "?", width, pages, nion_count_hidden_tabs(app));
+}

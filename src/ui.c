@@ -1852,6 +1852,13 @@ void action_next_tab(GSimpleAction *action, GVariant *parameter, gpointer user_d
     nion_cycle_tab(user_data, 1);
 }
 
+void action_show_all_tabs(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    nion_show_tab_overflow((NionApp *)user_data);
+}
+
 void action_previous_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     (void)action;
@@ -2165,6 +2172,10 @@ void nion_apply_css(void)
         ".nion-tab-audio { min-width: 24px; min-height: 24px; padding: 0; }"
         ".nion-tab-close { min-width: 24px; min-height: 24px; padding: 0; }"
         ".nion-new-tab { min-width: 30px; min-height: 30px; padding: 0 5px; margin: 3px 6px; }"
+        ".nion-tab-overflow { min-width: 30px; min-height: 30px; padding: 0 5px; margin: 3px 6px; }"
+        ".nion-tab-overflow-heading { opacity: 0.7; font-size: 0.88em; }"
+        ".nion-tab-overflow-marker { opacity: 0.55; font-family: monospace; }"
+        ".nion-tab-overflow-current { font-weight: 700; }"
         "notebook > header { padding: 2px 4px 0; }"
         "notebook > header tab { padding: 3px 5px; }";
 
@@ -2485,7 +2496,15 @@ void nion_build_ui(NionApp *app)
 
     app->notebook = gtk_notebook_new();
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(app->notebook), TRUE);
-    gtk_notebook_set_action_widget(GTK_NOTEBOOK(app->notebook), app->new_tab_button, GTK_PACK_END);
+    /* gtk_notebook_set_action_widget() owns a single slot per pack type: a
+     * second call replaces the first widget, which is then unparented and
+     * destroyed (the overflow button was freed this way and popped up nothing).
+     * Both controls therefore share one container. */
+    GtkWidget *tab_actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(tab_actions, "nion-tab-actions");
+    gtk_box_append(GTK_BOX(tab_actions), nion_build_tab_overflow_button(app));
+    gtk_box_append(GTK_BOX(tab_actions), app->new_tab_button);
+    gtk_notebook_set_action_widget(GTK_NOTEBOOK(app->notebook), tab_actions, GTK_PACK_END);
     gtk_widget_set_vexpand(app->notebook, TRUE);
     gtk_box_append(GTK_BOX(root), app->notebook);
 

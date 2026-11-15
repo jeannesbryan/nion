@@ -65,6 +65,7 @@ void action_fullscreen(GSimpleAction *action, GVariant *parameter, gpointer user
 void action_back(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_forward(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_next_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+void action_show_all_tabs(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_previous_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 void action_privacy_audit(GSimpleAction *action, GVariant *parameter, gpointer user_data);
