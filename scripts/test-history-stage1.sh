@@ -13,6 +13,14 @@ SRC="$ROOT/src"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
+# The harness builds its scratch profiles with g_dir_make_tmp, which honours
+# TMPDIR. Pointing it inside BUILD_DIR means a run that aborts (the mutation
+# builds are expected to abort mid-test) still leaves nothing in /tmp: the trap
+# above owns the whole tree. Without this, five directories per run were left
+# behind, because cleanup inside the test binary only runs on a clean exit.
+export TMPDIR="$BUILD_DIR/tmp"
+mkdir -p "$TMPDIR"
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
