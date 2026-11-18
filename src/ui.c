@@ -23,6 +23,7 @@
 #include "site-data.h"
 #include "app.h"
 #include "autocomplete.h"
+#include "idn-guard.h"
 #include "ui.h"
 
 /* Tab creation / current-tab / status / action-table operations that
@@ -1142,6 +1143,77 @@ void nion_update_progress(NionApp *app, NionTab *tab)
     gtk_widget_set_visible(app->progress_bar, TRUE);
 }
 
+/* v2.3.5 (T2-7): an international or encoded address says so in the address bar
+ * itself, not only inside the site information panel. A homograph warning that
+ * needs a panel opened first is a warning most people never see.
+ *
+ * A plain ASCII host clears everything here, so ordinary browsing looks exactly
+ * as it did before this feature. */
+void nion_update_idn_notice(NionApp *app)
+{
+    if (!app || !app->address)
+        return;
+
+    gtk_widget_remove_css_class(app->address, "nion-idn-notice");
+    gtk_widget_remove_css_class(app->address, "nion-idn-suspicious");
+    gtk_widget_set_tooltip_text(app->address, NULL);
+
+    /* Read the address bar, not the loaded page. The address bar is what the
+     * user is being asked to trust, and it is still there when the page fails to
+     * load or is blocked, which is exactly when a homograph matters most: an
+     * attacker does not need their page to render for the name to be believed. */
+    const gchar *text = gtk_editable_get_text(GTK_EDITABLE(app->address));
+    if (!text || !*text)
+        return;
+
+    gchar *host = nion_idn_host_from_uri(text);
+    if (!host) {
+        return;
+    }
+
+    /* Only names that can be an international one are reported: a bare word in
+     * the address bar is a search query, not a host. */
+    if (!nion_idn_has_non_ascii(host) && strchr(host, '.') == NULL) {
+        g_free(host);
+        return;
+    }
+
+    NionIdnVerdict *idn = nion_idn_inspect(host);
+    if (idn->risk != NION_IDN_SAFE) {
+        gchar *tip = g_strdup_printf("%s\n\nResolves to: %s",
+                                     idn->reason ? idn->reason : "",
+                                     idn->ascii ? idn->ascii : "");
+        gtk_widget_set_tooltip_text(app->address, tip);
+        gtk_widget_add_css_class(app->address,
+                                 idn->risk == NION_IDN_SUSPICIOUS
+                                     ? "nion-idn-suspicious"
+                                     : "nion-idn-notice");
+        g_free(tip);
+    }
+
+    /* Measured, not assumed: the window test reads this line to know the notice
+     * reached the address bar, since a CSS class is not visible from outside. */
+    if (g_getenv("NION_TAB_DEBUG")) {
+        g_printerr("idn-notice host=%s kind=%d risk=%d ascii=%s\n", host,
+                   (gint)idn->kind, (gint)idn->risk,
+                   idn->ascii ? idn->ascii : "");
+    }
+
+    nion_idn_verdict_free(idn);
+    g_free(host);
+}
+
+/* The notice has to follow the address as it is typed, not only when a page
+ * finishes loading: the moment an imitation matters is the moment before the
+ * user presses Enter, and on a failed or blocked load the page never arrives at
+ * all. */
+static void
+on_address_changed_idn(GtkEditable *editable, gpointer user_data)
+{
+    (void)editable;
+    nion_update_idn_notice(user_data);
+}
+
 void nion_update_controls(NionApp *app)
 {
     if (!app->notebook)
@@ -1176,6 +1248,7 @@ void nion_update_controls(NionApp *app)
     if (app->site_info_window && gtk_widget_get_visible(app->site_info_window))
         nion_update_site_info(app);
     nion_update_bookmark_button(app);
+    nion_update_idn_notice(app);
     /* A tab created while Tor is still bootstrapping must get its waiting
      * spinner now, not when the next log line arrives: a fresh tab may be the
      * only thing on screen. */
@@ -2475,6 +2548,12 @@ void nion_apply_css(void)
         ".nion-find-bar { border-top: 1px solid alpha(currentColor,0.10); border-bottom: 1px solid alpha(currentColor,0.10); }"
         ".nion-find-bar button { min-width: 30px; min-height: 30px; padding: 2px; }"
         ".nion-autocomplete { border-bottom: 1px solid alpha(currentColor,0.10); }"
+        /* v2.3.5 (T2-7): an international address is marked, and a suspected
+         * homograph is marked harder. Colour is never the only signal: the
+         * tooltip carries the sentence, because a warning nobody can read is
+         * not a warning. */
+        ".nion-idn-notice { box-shadow: inset 0 0 0 1px alpha(currentColor,0.35); }"
+        ".nion-idn-suspicious { box-shadow: inset 0 0 0 2px #c0392b; font-weight: 700; }"
         ".nion-autocomplete row { border-radius: 0; }"
         ".nion-onion-badge { min-width: 54px; padding: 3px 10px; border-radius: 999px; font-weight: 700; }"
         ".nion-site-info-warning { font-weight: 800; }"
@@ -2608,6 +2687,11 @@ void nion_build_ui(NionApp *app)
     gtk_box_append(GTK_BOX(site_info_box), app->site_info_title_label);
     gtk_box_append(GTK_BOX(site_info_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Host", &app->site_info_host_label));
+    /* v2.3.5 (T2-7): only appears for an international or encoded address, so a
+     * normal page shows the same panel as before. */
+    app->site_info_idn_row = nion_site_info_row("Address name", &app->site_info_idn_label);
+    gtk_widget_set_visible(app->site_info_idn_row, FALSE);
+    gtk_box_append(GTK_BOX(site_info_box), app->site_info_idn_row);
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Connection", &app->site_info_connection_label));
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Route", &app->site_info_route_label));
     gtk_box_append(GTK_BOX(site_info_box), nion_site_info_row("Mixed content", &app->site_info_mixed_label));
@@ -2893,6 +2977,7 @@ void nion_build_ui(NionApp *app)
      * into it, Up leaves it, Escape dismisses it, and a click on the page
      * dismisses it too. */
     g_signal_connect(app->address, "changed", G_CALLBACK(on_autocomplete_entry_changed), app);
+    g_signal_connect(app->address, "changed", G_CALLBACK(on_address_changed_idn), app);
     GtkEventController *address_keys = gtk_event_controller_key_new();
     g_signal_connect(address_keys, "key-pressed",
                      G_CALLBACK(on_autocomplete_address_key), app);

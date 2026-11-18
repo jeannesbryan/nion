@@ -1,5 +1,73 @@
 # Changelog
 
+## 2.3.5 — Development
+
+Address bar homograph protection, computed on this machine.
+
+Cyrillic "а" (U+0430) and Latin "a" are different characters that look the
+same, so "аpple.com" with a Cyrillic first letter is a different host from
+"apple.com" while reading identically. The address bar now says so.
+
+Everything is decided from the address itself: the ASCII form of a name is well
+defined (IDNA/punycode), and characters belong to scripts. Nothing is fetched, no
+reputation service is asked, and no part of the address leaves the browser. That
+is the only kind of protection this browser can honestly offer, and it is the
+kind that keeps working with no network.
+
+Two signals are used. First, Latin beside Cyrillic or Greek inside a single label
+is the classic construction, because those scripts look alike and are not written
+together. Second, a label written entirely in another script where every
+character has a Latin lookalike reads as Latin while resolving elsewhere, which
+the first signal alone would miss. Every label is examined, not only the first,
+because an imitation can sit under a plain-looking subdomain.
+
+The other direction matters just as much. A legitimate international name must
+not be accused, or the warning becomes noise people learn to skip. Japanese
+writes Han beside Hiragana and Katakana, Korean writes Han beside Hangul, and
+Russian is Cyrillic throughout: all of those are a notice, not an accusation.
+Only a script mix that should not occur, or a label built from lookalikes, is
+called suspicious. A plain ASCII host produces nothing at all.
+
+Two things the window test found that reading the source would not have:
+
+- **The address bar holds the punycode form.** WebKit normalizes a homograph URL,
+  so the bar reads "xn--pple-43d.com" and the Cyrillic letter is nowhere in the
+  text. Analyzing only the ASCII form reported a harmless "encoded name" for an
+  active imitation. The decoded name is now analyzed with the same rules, which
+  is what actually catches it in the product.
+- **Only the loaded page was inspected.** On a failed or blocked load the page
+  never arrives, and that is exactly when an imitation matters: an attacker does
+  not need their page to render for the name to be believed. The notice now
+  follows the address bar as it is typed.
+
+### Added
+
+- **`src/idn-guard.c`**: a GTK-free module that extracts the host from an address
+  and returns a verdict (plain, encoded, or international; safe, notice, or
+  suspicious) with the ASCII form, the decoded form, the scripts involved and one
+  sentence of explanation. The ASCII form comes from GLib's punycode
+  implementation, and the tests check it against published vectors rather than
+  against whatever the code produces.
+- **Address bar notice**: an international address is outlined, a suspected
+  homograph is outlined harder, and the tooltip carries the sentence and the
+  ASCII form. Colour is never the only signal.
+- **Site information row** ("Address name"), hidden for ordinary hosts so a
+  normal page shows the same panel as before.
+- `scripts/test-idn-guard-stage1.sh`: 91 behavioural checks, wiring assertions
+  (notice reaches the address bar, panel row hidden for plain hosts, every label
+  examined), six mutations including the two that matter most (ASCII letters not
+  counted as Latin, and every IDN treated as suspicious), and a real-window pass
+  that opens the app on a plain address and then on a Cyrillic one and checks
+  both directions in the log.
+
+### Fixed
+
+- **ASCII letters were not recorded as Latin script.** The first version only set
+  a flag for them and left the script mask alone, so "Cyrillic letter plus Latin
+  letters" looked like a single-script label and the classic attack passed
+  unnoticed. The unit test caught it before any UI existed; a mutation now guards
+  it permanently.
+
 ## 2.3.4 — Development
 
 The tab list can be filtered, so thirty open tabs stop being a wall.

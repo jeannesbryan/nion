@@ -273,6 +273,11 @@ struct _NionApp {
     GtkWidget *site_info_window;
     GtkWidget *site_info_title_label;
     GtkWidget *site_info_host_label;
+    /* v2.3.5 (T2-7): what an international address really resolves to. Hidden
+     * for ordinary ASCII hosts, because a warning on every page is a warning
+     * nobody reads. */
+    GtkWidget *site_info_idn_label;
+    GtkWidget *site_info_idn_row;
     GtkWidget *site_info_connection_label;
     GtkWidget *site_info_route_label;
     GtkWidget *site_info_mixed_label;

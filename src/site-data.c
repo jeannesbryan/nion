@@ -7,6 +7,7 @@
 
 #include "types.h"
 #include "navigation.h"
+#include "idn-guard.h"
 #include "per-site.h"
 #include "content-filter.h"
 #include "permission.h"
@@ -511,6 +512,29 @@ void nion_update_site_info(NionApp *app)
                            is_onion ? "Onion site information" : "Site information");
     if (app->site_info_host_label)
         gtk_label_set_text(GTK_LABEL(app->site_info_host_label), host_text);
+
+    /* v2.3.5 (T2-7): show what an international name actually resolves to. The
+     * row stays hidden for ordinary ASCII hosts, so opening this panel on a
+     * normal page looks exactly as it did before. */
+    if (app->site_info_idn_label) {
+        NionIdnVerdict *idn = nion_idn_inspect(host);
+        if (idn->risk == NION_IDN_SAFE) {
+            gtk_label_set_text(GTK_LABEL(app->site_info_idn_label), "");
+            if (app->site_info_idn_row)
+                gtk_widget_set_visible(app->site_info_idn_row, FALSE);
+        } else {
+            const gchar *prefix = idn->risk == NION_IDN_SUSPICIOUS
+                                      ? "Suspicious — " : "";
+            gchar *text = g_strdup_printf("%s%s", prefix,
+                                         idn->reason ? idn->reason : "");
+            gtk_label_set_text(GTK_LABEL(app->site_info_idn_label), text);
+            gtk_label_set_wrap(GTK_LABEL(app->site_info_idn_label), TRUE);
+            if (app->site_info_idn_row)
+                gtk_widget_set_visible(app->site_info_idn_row, TRUE);
+            g_free(text);
+        }
+        nion_idn_verdict_free(idn);
+    }
     if (app->site_info_connection_label)
         gtk_label_set_text(GTK_LABEL(app->site_info_connection_label), connection);
     if (app->site_info_route_label)

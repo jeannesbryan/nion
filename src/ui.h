@@ -28,6 +28,11 @@ void nion_update_onion_button(NionApp *app);
  * restore) instead of from a keystroke. Text written this way must not open the
  * suggestion list: the user did not type it, so nothing is being completed. */
 void nion_set_address_text(NionApp *app, const gchar *text);
+
+/* v2.3.5 (T2-7): mark the address bar when the host is an international or
+ * encoded name, and describe what it resolves to. Clears itself for a plain
+ * ASCII host. */
+void nion_update_idn_notice(NionApp *app);
 void nion_load_uri(NionTab *tab, const gchar *uri);
 void nion_load_home(NionTab *tab);
 void nion_refresh_home_pages(NionApp *app);

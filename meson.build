@@ -82,6 +82,7 @@ executable(
   'src/tor-status.c',
   'src/reading-list.c',
   'src/tab-filter.c',
+  'src/idn-guard.c',
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',
