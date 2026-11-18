@@ -43,6 +43,9 @@ typedef struct {
      * list. webview.c updates the bar when a page starts loading, and that is
      * not the user typing, so it must not trigger suggestions. */
     void (*set_address_text)(NionApp *app, const gchar *text);
+    /* v2.3.2 (T1-4): show the internal start page. Used after a Tor retry so
+     * the stale error page is replaced by the live bootstrap state. */
+    void (*load_home)(NionTab *tab);
 } NionWebviewCallbacks;
 
 void nion_webview_set_callbacks(const NionWebviewCallbacks *callbacks);

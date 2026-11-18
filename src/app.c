@@ -17,6 +17,7 @@
 #include "history.h"
 #include "tabs.h"
 #include "tor-core.h"
+#include "tor-status.h"
 #include "app.h"
 
 /* UI chrome / status operations that still live in the UI layer (Phase 7,
@@ -85,8 +86,10 @@ void nion_set_tor_ready(NionApp *app, gboolean ready)
         app->tor_bootstrap_percent = 100;
         nion_set_status(app, "● TOR CONNECTED");
     } else if (!app->tor_failed) {
-        gchar *status = g_strdup_printf("○ CONNECTING TO TOR… %d%%",
-                                        app->tor_bootstrap_percent);
+        /* v2.3.2 (T1-4): keep the phase description that was captured from
+         * Tor, so re-syncing windows does not drop back to a bare percentage. */
+        gchar *status = nion_tor_status_text(app->tor_bootstrap_percent,
+                                             app->tor_bootstrap_summary);
         nion_set_status(app, status);
         g_free(status);
     }
@@ -95,10 +98,11 @@ void nion_set_tor_ready(NionApp *app, gboolean ready)
     if (ready)
         nion_start_pending_restores(app);
     nion_update_controls(app);
+    nion_tabs_update_tor_waiting(app);
     nion_sync_private_windows_tor(app);
 }
 
-void nion_set_tor_progress(NionApp *app, gint percent)
+void nion_set_tor_progress(NionApp *app, gint percent, const gchar *summary)
 {
     if (percent < 0)
         percent = 0;
@@ -108,18 +112,28 @@ void nion_set_tor_progress(NionApp *app, gint percent)
     app->tor_failed = FALSE;
     app->tor_bootstrap_percent = percent;
 
+    /* v2.3.2 (T1-4): remember Tor's own description of the current phase. It
+     * is kept so the start page and the waiting tabs can be redrawn later
+     * without waiting for the next log line. */
+    if (summary && *summary) {
+        g_free(app->tor_bootstrap_summary);
+        app->tor_bootstrap_summary = g_strdup(summary);
+    }
+
     if (percent >= 100) {
+        g_clear_pointer(&app->tor_bootstrap_summary, g_free);
         nion_set_tor_ready(app, TRUE);
         return;
     }
 
     app->tor_ready = FALSE;
-    gchar *status = g_strdup_printf("○ CONNECTING TO TOR… %d%%", percent);
+    gchar *status = nion_tor_status_text(percent, summary);
     nion_set_status(app, status);
     g_free(status);
 
     nion_refresh_home_pages(app);
     nion_update_controls(app);
+    nion_tabs_update_tor_waiting(app);
     nion_sync_private_windows_tor(app);
 }
 
@@ -148,6 +162,7 @@ void nion_set_tor_error(NionApp *app, const gchar *message)
     nion_cancel_active_downloads(app);
     nion_refresh_home_pages(app);
     nion_update_controls(app);
+    nion_tabs_update_tor_waiting(app);
     nion_sync_private_windows_tor(app);
 }
 
@@ -319,7 +334,7 @@ void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer us
      * move every window to "connecting" (tor_ready = FALSE blocks new nav). */
     nion_stop_all_web_activity(app);
     nion_cancel_active_downloads(app);
-    nion_set_tor_progress(app, 0);
+    nion_set_tor_progress(app, 0, NULL);
     nion_set_status(app, "○ NEW IDENTITY — resetting Tor circuit…");
 
     nion_stop_tor_gracefully(app);
@@ -395,7 +410,7 @@ void nion_restart_tor_for_bridge_change(NionApp *app)
      * endpoint, and every window is moved back to "connecting". */
     nion_stop_all_web_activity(app);
     nion_cancel_active_downloads(app);
-    nion_set_tor_progress(app, 0);
+    nion_set_tor_progress(app, 0, NULL);
     nion_set_status(app, "○ TOR RESTART — applying bridge configuration…");
 
     nion_stop_tor_gracefully(app);

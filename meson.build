@@ -76,6 +76,7 @@ executable(
   'src/bookmarks.c',
   'src/history.c',
   'src/autocomplete.c',
+  'src/tor-status.c',
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',

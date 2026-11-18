@@ -167,7 +167,11 @@ struct _NionTab {
     gchar *discard_uri;
     gchar *discard_title;
     gboolean discard_muted;
-    GtkWidget *suspend_indicator;   /* "💤" chip in the tab strip */
+    GtkWidget *suspend_indicator;
+    /* v2.3.2 (T1-4): a small spinner shown in a tab that is waiting for Tor.
+     * A tab opened while Tor is still bootstrapping otherwise looks like an
+     * empty page with no explanation for as long as the bootstrap takes. */
+    GtkWidget *tor_wait_indicator;   /* "💤" chip in the tab strip */
     gint64 last_active_msec;        /* monotonic ms of last user/load activity */
 };
 
@@ -321,6 +325,11 @@ struct _NionApp {
     gchar *tor_binary_path;
     gchar *tor_runtime_file;
     guint tor_startup_timeout_id;
+    /* v2.3.2 (roadmap T1-4): what Tor says it is doing, copied from its own
+     * bootstrap log line ("Loading relay descriptors"). Shown in the status
+     * line, in the start page, and in the tooltip of every tab that is waiting,
+     * so a slow bootstrap looks like work in progress rather than a hang. */
+    gchar *tor_bootstrap_summary;
     gboolean tor_recovery_attempted;
     guint tor_port_retry_count;
     gboolean tor_saw_port_conflict;

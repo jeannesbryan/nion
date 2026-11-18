@@ -17,6 +17,7 @@
 #include "session.h"
 #include "tabs.h"
 #include "history.h"
+#include "tor-core.h"
 #include "util.h"
 #include <gtk/gtk.h>
 #include <webkit/webkit.h>
@@ -57,6 +58,11 @@ static void nion_update_controls(NionApp *app)
 static void nion_set_address_text(NionApp *app, const gchar *text)
 {
     if (s_webview_callbacks.set_address_text) s_webview_callbacks.set_address_text(app, text);
+}
+
+static void nion_load_home(NionTab *tab)
+{
+    if (s_webview_callbacks.load_home) s_webview_callbacks.load_home(tab);
 }
 
 static void nion_update_window_title(NionApp *app, NionTab *tab)
@@ -741,6 +747,22 @@ gboolean on_webview_decide_policy(WebKitWebView *web_view,
         webkit_policy_decision_ignore(decision);
         if (user_gesture)
             nion_request_new_identity(tab->app);
+        return TRUE;
+    }
+
+    /* v2.3.2 (T1-4): "Try Tor again" on the start page and the Tor error page.
+     * Requires a user gesture for the same reason as New Identity: starting a
+     * daemon is an action, and a page must not be able to trigger it. */
+    if (uri && g_str_has_prefix(uri, "nion://retry-tor")) {
+        webkit_policy_decision_ignore(decision);
+        if (user_gesture) {
+            if (nion_retry_tor(tab->app)) {
+                /* The error page on screen describes a state that no longer
+                 * holds, so replace it with the start page: that is where the
+                 * fresh bootstrap percentage is shown. */
+                nion_load_home(tab);
+            }
+        }
         return TRUE;
     }
 

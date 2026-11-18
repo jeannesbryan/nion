@@ -627,6 +627,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
         .show_external_protocol_prompt = nion_show_external_protocol_prompt,
         .request_new_identity = nion_activate_new_identity,
         .set_address_text = nion_set_address_text,
+        .load_home = nion_load_home,
     };
     nion_webview_set_callbacks(&webview_callbacks);
 

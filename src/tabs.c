@@ -11,6 +11,7 @@
 #include "types.h"
 #include "session.h"
 #include "navigation.h"
+#include "tor-status.h"
 #include "util.h"
 #include <gtk/gtk.h>
 #include <webkit/webkit.h>
@@ -467,6 +468,46 @@ static void nion_update_tab_pinned_ui(NionTab *tab)
     }
 }
 
+/* v2.3.2 (roadmap T1-4): every tab that cannot browse yet shows a spinner and a
+ * tooltip naming the phase Tor is in. Without this, opening a tab during a slow
+ * bootstrap produced a blank page that was indistinguishable from a hang. */
+void nion_tabs_update_tor_waiting(NionApp *app)
+{
+    if (!app || !app->notebook)
+        return;
+
+    const gboolean waiting = !app->tor_ready;
+    gchar *tooltip = NULL;
+    if (waiting) {
+        gchar *short_text = nion_tor_tab_waiting_text(app->tor_bootstrap_percent,
+                                                      app->tor_bootstrap_summary);
+        gchar *explain = nion_tor_blocked_explanation(app->tor_bootstrap_percent,
+                                                      app->tor_bootstrap_summary);
+        tooltip = g_strdup_printf("%s. %s", short_text, explain);
+        g_free(short_text);
+        g_free(explain);
+    }
+
+    const gint pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook));
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(app->notebook), i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (!tab || !tab->tor_wait_indicator)
+            continue;
+
+        gtk_widget_set_visible(tab->tor_wait_indicator, waiting);
+        if (waiting) {
+            gtk_spinner_start(GTK_SPINNER(tab->tor_wait_indicator));
+            gtk_widget_set_tooltip_text(tab->tor_wait_indicator, tooltip);
+        } else {
+            gtk_spinner_stop(GTK_SPINNER(tab->tor_wait_indicator));
+            gtk_widget_set_tooltip_text(tab->tor_wait_indicator, NULL);
+        }
+    }
+
+    g_free(tooltip);
+}
+
 void nion_set_tab_pinned(NionTab *tab, gboolean pinned, gboolean schedule_save)
 {
     if (!tab || !tab->app || !tab->app->notebook)
@@ -795,6 +836,11 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
     GtkWidget *audio = gtk_button_new_from_icon_name("audio-volume-high-symbolic");
     GtkWidget *close = gtk_button_new_from_icon_name("window-close-symbolic");
     GtkWidget *suspend = gtk_label_new("💤");
+    /* v2.3.2 (T1-4): a tab that is only waiting for Tor must say so. */
+    GtkWidget *tor_wait = gtk_spinner_new();
+    gtk_widget_set_size_request(tor_wait, 14, 14);
+    gtk_widget_set_valign(tor_wait, GTK_ALIGN_CENTER);
+    gtk_widget_set_visible(tor_wait, FALSE);
 
     gtk_widget_set_size_request(favicon, 16, 16);
     gtk_picture_set_can_shrink(GTK_PICTURE(favicon), TRUE);
@@ -824,6 +870,7 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
     gtk_box_append(GTK_BOX(box), favicon);
     gtk_box_append(GTK_BOX(box), pin);
     gtk_box_append(GTK_BOX(box), suspend);
+    gtk_box_append(GTK_BOX(box), tor_wait);
     gtk_box_append(GTK_BOX(box), label);
     gtk_box_append(GTK_BOX(box), audio);
     gtk_box_append(GTK_BOX(box), close);
@@ -832,6 +879,7 @@ GtkWidget *nion_make_tab_label(NionTab *tab)
     tab->favicon_picture = favicon;
     tab->pin_indicator = pin;
     tab->suspend_indicator = suspend;
+    tab->tor_wait_indicator = tor_wait;
     tab->audio_button = audio;
     tab->tab_label_box = box;
     tab->tab_close_button = close;

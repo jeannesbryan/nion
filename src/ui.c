@@ -389,8 +389,20 @@ static gchar *nion_home_html(NionApp *app)
             "Browsing is blocked. Last Tor message:<br><code>%s</code>", escaped);
         g_free(escaped);
     } else {
+        /* v2.3.2 (T1-4): say what Tor is doing, not only how far it has got.
+         * A bootstrap that sits at 45% for a while is normal; a bootstrap that
+         * sits at 45% with no explanation looks like a hang. */
         state = g_strdup_printf("Connecting to Tor — %d%%", app->tor_bootstrap_percent);
-        detail = g_strdup("Browsing unlocks automatically when Tor reaches 100% bootstrap.");
+        gchar *escaped_phase = app->tor_bootstrap_summary && *app->tor_bootstrap_summary
+            ? g_markup_escape_text(app->tor_bootstrap_summary, -1)
+            : NULL;
+        detail = escaped_phase
+            ? g_strdup_printf("Tor is at %d%%: %s.<br>Browsing unlocks automatically when Tor "
+                              "reaches 100%% bootstrap. Nothing is sent anywhere until then.",
+                              app->tor_bootstrap_percent, escaped_phase)
+            : g_strdup("Browsing unlocks automatically when Tor reaches 100% bootstrap. "
+                       "Nothing is sent anywhere until then.");
+        g_free(escaped_phase);
     }
 
     /* Privacy-dashboard tiles (v2.1). Discarded reflects live suspended tabs. */
@@ -399,6 +411,14 @@ static gchar *nion_home_html(NionApp *app)
         ? gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) : 0;
     guint discarded_tabs = (app && app->notebook)
         ? (guint)nion_count_discarded_tabs(app) : 0;
+
+    /* v2.3.2 (T1-4): a failed bootstrap used to leave the window with no way
+     * forward. The retry button is rendered only when Tor has actually failed,
+     * so it never invites a second daemon while one is still working. */
+    gchar *retry_block = app->tor_failed
+        ? g_strdup("<a class='identity' href='nion://retry-tor/'>"
+                   "<span class='ic'>↻</span>Try Tor again</a>")
+        : g_strdup("");
 
     gchar *html = g_strdup_printf(
         "<!doctype html><html><head><meta charset='utf-8'>"
@@ -444,17 +464,19 @@ static gchar *nion_home_html(NionApp *app)
         "<div class='tile'><span>Tabs active</span><b>%u</b></div>"
         "<div class='tile'><span>Discarded</span><b>%u</b></div>"
         "</div>"
+        "%s"
         "<a class='identity' href='nion://new-identity/'><span class='ic'>↻</span>New Identity</a>"
         "<div class='shortcuts'><div class='shortcut'><kbd>Ctrl+L</kbd><br>Focus address</div>"
         "<div class='shortcut'><kbd>Ctrl+T</kbd><br>New tab</div>"
         "<div class='shortcut'><kbd>Ctrl+Tab</kbd><br>Next tab</div></div>"
         "<footer>NiOn %s · Open websites. Open onions. Everything through Tor.</footer>"
         "</main></body></html>",
-        state_class, state_glyph, state, detail, security_label,
+        state_class, state_glyph, state, detail, retry_block, security_label,
         active_tabs, discarded_tabs, NION_VERSION);
 
     g_free(state);
     g_free(detail);
+    g_free(retry_block);
     return html;
 }
 
@@ -467,6 +489,14 @@ static gchar *nion_error_html(const gchar *category,
     gchar *safe_heading = g_markup_escape_text(heading ? heading : "Page could not be loaded", -1);
     gchar *safe_detail = g_markup_escape_text(detail ? detail : "Unknown error", -1);
     gchar *safe_uri = g_markup_escape_text(uri ? uri : "", -1);
+
+    /* v2.3.2 (T1-4): when Tor itself is the reason the page did not load,
+     * "reload" is useless advice: the request would fail for the same reason.
+     * Offer the one action that can actually change the outcome. */
+    gboolean tor_failure = category && g_str_equal(category, "Tor error");
+    gchar *retry_block = tor_failure
+        ? g_strdup("<a class='retry' href='nion://retry-tor/'>Try Tor again</a>")
+        : g_strdup("");
 
     gchar *html = g_strdup_printf(
         "<!doctype html><html><head><meta charset='utf-8'>"
@@ -483,12 +513,18 @@ static gchar *nion_error_html(const gchar *category,
         "h1{font-size:1.8rem;margin:.55rem 0 1rem}p{line-height:1.6;color:var(--muted)}"
         "code{display:block;overflow-wrap:anywhere;padding:.65rem .75rem;border-radius:8px;background:var(--soft);color:var(--fg)}"
         ".hint{margin:1.3rem 0 0;padding-top:1rem;border-top:1px solid var(--border);font-size:.9rem}"
+        ".retry{display:inline-block;margin-top:1.1rem;padding:.6rem 1rem;border-radius:8px;"
+        "background:var(--soft);color:var(--fg);font-weight:700;text-decoration:none}"
         "</style></head><body><main>"
         "<div class='tag'>%s</div><h1>%s</h1>"
         "<p><code>%s</code></p><p>%s</p>"
+        "%s"
         "<p class='hint'>Reload to try again, or edit the address above.</p>"
         "</main></body></html>",
-        safe_heading, safe_category, safe_heading, safe_uri, safe_detail);
+        safe_heading, safe_category, safe_heading, safe_uri, safe_detail,
+        retry_block);
+
+    g_free(retry_block);
 
     g_free(safe_category);
     g_free(safe_heading);
@@ -1140,6 +1176,10 @@ void nion_update_controls(NionApp *app)
     if (app->site_info_window && gtk_widget_get_visible(app->site_info_window))
         nion_update_site_info(app);
     nion_update_bookmark_button(app);
+    /* A tab created while Tor is still bootstrapping must get its waiting
+     * spinner now, not when the next log line arrives: a fresh tab may be the
+     * only thing on screen. */
+    nion_tabs_update_tor_waiting(app);
 }
 
 /* Resolve the .onion twin to offer for the current tab: prefer a freshly

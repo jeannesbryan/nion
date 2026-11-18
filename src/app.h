@@ -18,7 +18,9 @@ void nion_prepare_appimage_webkit_sandbox(void);
 
 /* Tor-state reporters (main.c registers them as NionTorCallbacks). */
 void nion_set_tor_ready(NionApp *app, gboolean ready);
-void nion_set_tor_progress(NionApp *app, gint percent);
+/* v2.3.2 (T1-4): summary is Tor's own description of the current phase, or
+ * NULL when the log line carried none. */
+void nion_set_tor_progress(NionApp *app, gint percent, const gchar *summary);
 void nion_set_tor_error(NionApp *app, const gchar *message);
 
 /* GApplication / GAction handlers (registered by main.c). */

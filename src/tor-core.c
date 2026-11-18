@@ -10,6 +10,7 @@
 #include "types.h"
 #include "bridge.h"
 #include "network.h"
+#include "tor-status.h"
 #include "util.h"
 #include <glib.h>
 #include <gio/gio.h>
@@ -34,10 +35,10 @@ static void nion_set_status(NionApp *app, const gchar *message)
         s_tor_callbacks.set_status(app, message);
 }
 
-static void nion_set_tor_progress(NionApp *app, gint percent)
+static void nion_set_tor_progress(NionApp *app, gint percent, const gchar *summary)
 {
     if (s_tor_callbacks.set_tor_progress)
-        s_tor_callbacks.set_tor_progress(app, percent);
+        s_tor_callbacks.set_tor_progress(app, percent, summary);
 }
 
 static void nion_set_tor_error(NionApp *app, const gchar *message)
@@ -433,12 +434,16 @@ static void on_tor_line_read(GObject *source, GAsyncResult *result, gpointer use
     if (nion_tor_log_suggests_corruption(line))
         app->tor_saw_corruption = TRUE;
 
-    const gchar *bootstrap = strstr(line, "Bootstrapped ");
-    if (bootstrap) {
-        gint percent = -1;
-        if (sscanf(bootstrap, "Bootstrapped %d%%", &percent) == 1)
-            nion_set_tor_progress(app, percent);
-    }
+    /* v2.3.2 (T1-4): keep both halves of the bootstrap line. The percentage
+     * says how far Tor has got; the description says what it is doing right
+     * now, which is the difference between "still working" and "hung". The
+     * description is Tor's own wording, so it cannot drift out of date the way
+     * a private table of phase names would. */
+    gint percent = -1;
+    gchar *summary = NULL;
+    if (nion_tor_parse_bootstrap(line, &percent, NULL, &summary))
+        nion_set_tor_progress(app, percent, summary);
+    g_free(summary);
 
     g_free(line);
     nion_read_tor_line(app);
@@ -661,13 +666,71 @@ gboolean nion_start_tor(NionApp *app)
     GInputStream *stdout_stream = g_subprocess_get_stdout_pipe(app->tor_process);
     app->tor_output = g_data_input_stream_new(stdout_stream);
 
-    nion_set_tor_progress(app, 0);
+    nion_set_tor_progress(app, 0, NULL);
     nion_read_tor_line(app);
     g_subprocess_wait_async(app->tor_process, NULL, on_tor_process_waited, app);
     app->tor_startup_timeout_id = g_timeout_add_seconds(
         NION_TOR_STARTUP_TIMEOUT_SECONDS,
         nion_tor_startup_timeout,
         app);
+    return TRUE;
+}
+
+gboolean nion_retry_tor(NionApp *app)
+{
+    if (!app || app->shutting_down)
+        return FALSE;
+
+    /* Nothing to retry while Tor is healthy or still working: a second start
+     * would leave two daemons racing for the same SOCKS port. */
+    if (app->tor_ready && !app->tor_failed)
+        return FALSE;
+    if (app->tor_process && !app->tor_failed)
+        return FALSE;
+
+    nion_store_tor_log(app, "User asked to try Tor again");
+
+    /* Retrying means starting a new runtime, so a fresh port search is
+     * legitimate: the previous port may still be held by the daemon we are
+     * about to replace. The counters that exist to avoid loops are reset here
+     * because this is a deliberate, user-initiated attempt, not an automatic
+     * one that could spin. */
+    app->tor_port_retry_count = 0;
+    app->tor_recovery_attempted = FALSE;
+    app->tor_saw_port_conflict = FALSE;
+    app->tor_saw_corruption = FALSE;
+    app->tor_failed = FALSE;
+    app->tor_ready = FALSE;
+    app->tor_bootstrap_percent = 0;
+    g_clear_pointer(&app->tor_bootstrap_summary, g_free);
+
+    /* Tear down whatever is left of the old runtime first. Force-exiting is
+     * the point: a daemon that failed to bootstrap will not answer a polite
+     * shutdown, and waiting for it would stall the retry the user asked for. */
+    if (app->tor_startup_timeout_id) {
+        g_source_remove(app->tor_startup_timeout_id);
+        app->tor_startup_timeout_id = 0;
+    }
+    if (app->tor_process) {
+        g_subprocess_force_exit(app->tor_process);
+        g_clear_object(&app->tor_process);
+    }
+    g_clear_object(&app->tor_output);
+    if (app->tor_runtime_file)
+        g_unlink(app->tor_runtime_file);
+
+    /* Same path the port-conflict and corrupt-state recoveries take: pick a
+     * port, re-point the network session, start the daemon. */
+    if (!nion_choose_tor_port(app)) {
+        nion_set_tor_error(app, "No free Tor SOCKS port was found in the 19050-19069 range");
+        return FALSE;
+    }
+
+    nion_apply_network_proxy(app);
+    if (!nion_start_tor(app))
+        return FALSE;
+
+    nion_set_status(app, "○ CONNECTING TO TOR… 0%");
     return TRUE;
 }
 

@@ -26,6 +26,11 @@ void nion_update_tab_audio_button(NionTab *tab);
 void on_webview_muted_changed(WebKitWebView *web_view, GParamSpec *pspec, gpointer user_data);
 GtkWidget *nion_make_tab_label(NionTab *tab);
 
+/* v2.3.2 (roadmap T1-4): show or hide the "waiting for Tor" spinner on every
+ * tab in this window. Called whenever Tor changes state and after a tab is
+ * added, so a tab opened mid-bootstrap does not sit there looking broken. */
+void nion_tabs_update_tor_waiting(NionApp *app);
+
 /* ---- Tab strip overflow (Priority+) ---- */
 
 /* How many tabs are currently clipped out of the strip: no allocated area, or

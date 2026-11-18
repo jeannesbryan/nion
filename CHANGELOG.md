@@ -1,5 +1,52 @@
 # Changelog
 
+## 2.3.2 — Development
+
+Tor is slow by nature, and NiOn used to hide that behind a single percentage.
+Now it says what Tor is doing.
+
+The bootstrap log line carries both facts:
+
+```
+Bootstrapped 45% (requesting_descriptors): Asking for relay descriptors
+```
+
+NiOn keeps only the number before this change, so a bootstrap that sat at 45%
+for half a minute looked exactly like a browser that had stopped working. The
+wording in the status line, on the start page, and in the tooltip of every
+waiting tab is now Tor's own sentence, taken from the line it just printed.
+That is deliberate: a private table of phase names in NiOn would go stale the
+first time Tor renamed a phase, while the text that Tor sends cannot describe
+Tor incorrectly.
+
+A tab opened while Tor is still bootstrapping now shows a small spinner and a
+tooltip explaining that it is waiting, instead of a blank page that could not be
+told apart from a hang. It disappears on its own when Tor connects.
+
+A failed or timed-out bootstrap used to leave no way forward: browsing stayed
+blocked, which is correct, but the only escape was quitting the browser. The
+start page and the Tor error page now offer "Try Tor again". It stops the failed
+daemon before starting a new one, so a retry can never leave two Tor processes
+racing for the same SOCKS port, and it refuses to run while Tor is healthy or
+still working. Like every other action that changes the machine's state, it
+needs a click: a page cannot trigger it.
+
+### Added
+
+- **`src/tor-status.c`**: a GTK-free module that parses Tor's bootstrap lines
+  (percentage, tag, description), classifies the phase, and phrases the status
+  line, the tab label and the blocked-navigation explanation. Unknown phases
+  deliberately say nothing rather than guessing.
+- **`nion_retry_tor()`** in `src/tor-core.c`: a deliberate restart after a
+  failure, reusing the port-conflict and corrupt-state recovery path.
+- **Waiting-tab indicator**: a spinner in the tab strip plus a tooltip that
+  names the current phase, refreshed on every Tor state change and whenever a
+  tab is created.
+- `scripts/test-tor-status-stage3.sh`: 108 behavioural checks whose fixtures are
+  log lines captured from the bundled Tor binary (0.4.9.16), wiring assertions
+  (phase reaches the UI, retry cannot stack daemons, retry needs a gesture,
+  no bypass phrasing), and seven mutations, each required to fail.
+
 ## 2.3.1 — Development
 
 The address bar now completes what you type without asking anyone else about it.
