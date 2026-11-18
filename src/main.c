@@ -19,6 +19,7 @@
 #include "navigation.h"
 #include "per-site.h"
 #include "content-filter.h"
+#include "data-saver.h"
 #include "permission.h"
 #include "privacy.h"
 #include "tor-core.h"
@@ -173,6 +174,61 @@ static void nion_prepare_content_filter(NionApp *app)
                                           on_content_filter_saved,
                                           app);
     g_bytes_unref(rules);
+}
+
+/* v2.3.7 (T2-10): compile the data saver rules once, into the same store the
+ * content blocker uses under a different id. Doing it at startup rather than on
+ * first use keeps the toggle synchronous: by the time the user can press it, the
+ * filter either exists or is known to have failed, and neither case is guessed. */
+static void on_data_saver_saved(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    NionApp *app = user_data;
+    if (!app || app->shutting_down)
+        return;
+
+    GError *error = NULL;
+    WebKitUserContentFilter *filter = webkit_user_content_filter_store_save_finish(
+        WEBKIT_USER_CONTENT_FILTER_STORE(source), result, &error);
+    if (!filter) {
+        /* A failure here means the feature cannot work. It is recorded rather
+         * than hidden, so the toggle can refuse instead of pretending. */
+        app->data_saver_failed = TRUE;
+        g_warning("NiOn data saver rules could not be compiled: %s",
+                  error ? error->message : "unknown error");
+        g_clear_error(&error);
+        return;
+    }
+
+    if (app->data_saver_filter)
+        webkit_user_content_filter_unref(app->data_saver_filter);
+    app->data_saver_filter = filter;
+    app->data_saver_failed = FALSE;
+}
+
+static void nion_prepare_data_saver(NionApp *app)
+{
+    if (!app || app->is_private || !app->content_filter_store)
+        return;
+
+    GBytes *rules = g_bytes_new_static(nion_data_saver_rules_json(),
+                                      strlen(nion_data_saver_rules_json()));
+    webkit_user_content_filter_store_save(app->content_filter_store,
+                                          NION_DATA_SAVER_FILTER_ID,
+                                          rules, NULL,
+                                          on_data_saver_saved, app);
+    g_bytes_unref(rules);
+}
+
+/* v2.3.7 (T2-10): the per-tab data saver toggle. Registered as "win.data-saver"
+ * so the menu and the keyboard shortcut reach the same code. */
+void action_data_saver(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    NionApp *app = user_data;
+    NionTab *tab = nion_current_tab(app);
+    if (tab)
+        nion_data_saver_toggle(tab);
 }
 
 static gboolean nion_is_valid_onion_location(NionTab *tab, const gchar *candidate)
@@ -462,6 +518,7 @@ static void nion_install_actions(NionApp *app)
         { "history", action_history, NULL, NULL, NULL, {0} },
         { "save-for-later", action_save_for_later, NULL, NULL, NULL, {0} },
         { "reading-list", action_reading_list, NULL, NULL, NULL, {0} },
+        { "data-saver", action_data_saver, NULL, NULL, NULL, {0} },
         { "preferences", action_preferences, NULL, NULL, NULL, {0} },
         { "bridges", action_bridges, NULL, NULL, NULL, {0} },
         { "privacy-audit", action_privacy_audit, NULL, NULL, NULL, {0} },
@@ -511,6 +568,8 @@ static void nion_install_actions(NionApp *app)
     /* Ctrl+Shift+B is free; Ctrl+B alone is not used by NiOn either, but the
      * shifted form groups it with the other library shortcuts. */
     const gchar *reading_list_accels[] = { "<Primary><Shift>b", NULL };
+    /* Ctrl+Shift+D: free, and grouped with the other per-tab view shortcuts. */
+    const gchar *data_saver_accels[] = { "<Primary><Shift>d", NULL };
 
     gtk_application_set_accels_for_action(app->application, "win.new-tab", new_tab_accels);
     gtk_application_set_accels_for_action(app->application, "win.private-window", private_window_accels);
@@ -539,6 +598,8 @@ static void nion_install_actions(NionApp *app)
                                           save_for_later_accels);
     gtk_application_set_accels_for_action(app->application, "win.reading-list",
                                           reading_list_accels);
+    gtk_application_set_accels_for_action(app->application, "win.data-saver",
+                                          data_saver_accels);
 }
 
 static void on_activate(GtkApplication *application, gpointer user_data)
@@ -710,6 +771,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     nion_load_preferred_onion(app);
     nion_load_bridges(app);
     nion_prepare_content_filter(app);
+    nion_prepare_data_saver(app);
     gboolean tor_port_ok = nion_choose_tor_port(app);
     if (!nion_prepare_network(app)) {
         g_critical("NiOn could not create its WebKit network session");

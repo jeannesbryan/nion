@@ -1,5 +1,68 @@
 # Changelog
 
+## 2.3.7 — Development
+
+A data saver that blocks requests instead of hiding things.
+
+The obvious way to save data is a stylesheet that hides images. It saves nothing:
+by the time CSS hides an image the bytes have already been downloaded, so the
+page costs exactly as much and merely looks cheaper. NiOn blocks the requests
+themselves, through WebKit's resource-type filter, so the bytes never travel.
+That is the only thing worth calling a data saver on a slow connection.
+
+Three resource types are blocked: image, media and font. Scripts and stylesheets
+are deliberately left alone, because blocking those changes what a page does
+rather than what it costs, and a broken page is not data saved: it is a page the
+user has to reload without the feature.
+
+The choice is per tab, because "this page is heavy" is a property of a page, not
+of a session. Turning it on reloads the tab, since a filter only affects requests
+made after it is applied, and the choice is re-applied on every navigation for
+the same reason. A tab tracks two flags, not one: what the user asked for and
+what the WebView actually has. They differ when the rules failed to compile or
+the tab is showing an internal page, and that difference is what stops the UI
+from reporting a saving that is not happening.
+
+When the rules cannot compile, the toggle refuses and says so in the status line
+rather than flipping a switch that does nothing.
+
+### Added
+
+- **`src/data-saver.c`**: the rules as WebKit content-blocker JSON, the per-tab
+  toggle, and the apply/remove logic, using the same filter store, the same
+  remove-then-add pattern and the same private-window borrowing as the existing
+  content blocker.
+- **Menu entry and Ctrl+Shift+D**, offered in every window including a private
+  one, with the label following the current tab's state and saying "unavailable"
+  when the rules failed.
+- `scripts/test-data-saver-stage1.sh`: rule assertions, wiring assertions, two
+  mutations, an internal-page refusal check in the real window, and the part that
+  matters, described next.
+
+### Measured, not assumed
+
+"Compiling a filter" only proves the JSON parsed. The test therefore loads a real
+page that references an image, a web font and a video, and counts what a real
+server received:
+
+- control run, filter off: the document, the image and the font all arrive.
+- filtered run: the document arrives, the image and the font never do.
+
+The control is what makes the result mean anything. Without it, "nothing reached
+the server" could equally mean the harness never loaded a page, and an earlier
+attempt at this measurement did in fact produce exactly that false comfort when
+one of the two test servers had not come up; the failure was invisible because
+nothing checked the server was listening. The script now waits for each port to
+answer before using it.
+
+The mutations are judged by the same measurement rather than by the source text:
+weakening the rules until the image arrives, or narrowing them to images only
+until the font arrives, must both bring a request back.
+
+Not measured, and stated as such: the video (media) case is blocked by the same
+rule as the image and the font but is not separately asserted, because the
+harness page has no autoplay and the request timing is unreliable.
+
 ## 2.3.6 — Development
 
 The start page now reports what the browser is actually doing about privacy.

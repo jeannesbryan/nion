@@ -84,6 +84,7 @@ executable(
   'src/tab-filter.c',
   'src/idn-guard.c',
   'src/privacy-dashboard.c',
+  'src/data-saver.c',
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',

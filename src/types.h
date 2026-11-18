@@ -88,6 +88,10 @@
 #define NION_MAX_BRIDGE_LINE_CHARS 512
 #define NION_BRIDGE_FORMAT 1
 #define NION_CONTENT_FILTER_ID "nion-lightweight-v1"
+/* v2.3.7 (T2-10): the data saver's own filter. A separate id because it is
+ * separate rules, applied per tab, and the content blocker must keep working
+ * whether or not a tab is saving data. */
+#define NION_DATA_SAVER_FILTER_ID "nion-data-saver-v1"
 #define NION_ZOOM_MIN_PERCENT 50
 #define NION_ZOOM_MAX_PERCENT 200
 #define NION_ZOOM_DEFAULT_PERCENT 100
@@ -142,6 +146,13 @@ struct _NionTab {
     gboolean mixed_content_run;
     gboolean mixed_content_other;
     gboolean content_filter_applied;
+    /* v2.3.7 (T2-10): per-tab data saver. Two flags on purpose: `data_saver` is
+     * what the user asked for, `data_saver_applied` is what the WebView actually
+     * has. They differ when the rules failed to compile or the tab is showing an
+     * internal page, and the difference is what stops the UI from claiming a
+     * saving that is not happening. */
+    gboolean data_saver;
+    gboolean data_saver_applied;
     /* Reader mode (2.2.4): a user style sheet is attached to this tab. */
     gboolean reader_mode;
 
@@ -459,6 +470,10 @@ struct _NionApp {
     GHashTable *temporary_permissions;
     WebKitUserContentFilterStore *content_filter_store;
     WebKitUserContentFilter *content_filter;
+    /* v2.3.7 (T2-10): the compiled data saver rules, shared with private windows
+     * the same way the content blocker is. */
+    WebKitUserContentFilter *data_saver_filter;
+    gboolean data_saver_failed;
     gboolean content_filter_ready;
     gboolean content_filter_failed;
     GQueue *closed_tabs;

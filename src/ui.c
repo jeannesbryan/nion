@@ -26,6 +26,7 @@
 #include "idn-guard.h"
 #include "content-filter.h"
 #include "privacy-dashboard.h"
+#include "data-saver.h"
 #include "ui.h"
 
 /* Tab creation / current-tab / status / action-table operations that
@@ -56,6 +57,15 @@ nion_set_status(NionApp *app, const gchar *text)
 {
     if (cb.set_status)
         cb.set_status(app, text);
+}
+
+
+/* Public wrapper: other modules report through this rather than through a
+ * callback struct, because a status line is not a place where a silent no-op is
+ * acceptable. */
+void nion_show_status(NionApp *app, const gchar *text)
+{
+    nion_set_status(app, text);
 }
 
 static void
@@ -2910,6 +2920,25 @@ void nion_build_ui(NionApp *app)
         g_menu_append(menu, "History (Ctrl+H)", "win.history");
         g_menu_append(menu, "Save for Later (Ctrl+Shift+S)", "win.save-for-later");
         g_menu_append(menu, "Reading List (Ctrl+Shift+B)", "win.reading-list");
+    }
+    /* v2.3.7 (T2-10): per tab, so it is offered in every window including a
+     * private one. The label follows the current tab's state, and says so
+     * plainly when the feature cannot work. */
+    if (nion_data_saver_has_failed(app)) {
+        g_menu_append(menu, "Data Saver — unavailable", "win.data-saver");
+    } else {
+        /* The menu is built while the window is still being assembled, so the
+         * notebook may not exist yet. Asking nion_current_tab() here without
+         * checking produced a real Gtk-CRITICAL (gtk_notebook_get_current_page
+         * on a widget that is not a notebook). */
+        NionTab *current = (app->notebook && GTK_IS_NOTEBOOK(app->notebook))
+                               ? nion_current_tab(app)
+                               : NULL;
+        g_menu_append(menu,
+                      (current && nion_data_saver_is_on(current))
+                          ? "Data Saver for this tab: on (Ctrl+Shift+D)"
+                          : "Data Saver for this tab: off (Ctrl+Shift+D)",
+                      "win.data-saver");
     }
     g_menu_append(menu, app->is_private ? "Private Downloads" : "Downloads", "win.downloads");
     g_menu_append(menu, "Preferences", "win.preferences");

@@ -24,6 +24,11 @@ void nion_update_window_title(NionApp *app, NionTab *tab);
 void nion_update_progress(NionApp *app, NionTab *tab);
 void nion_update_onion_button(NionApp *app);
 
+/* Status line, for modules outside ui.c that need to report the outcome of a
+ * user action. The data saver uses it so a toggle that cannot work says so
+ * instead of failing silently. */
+void nion_show_status(NionApp *app, const gchar *text);
+
 /* Fill the address bar from code (tab switch, navigation progress, session
  * restore) instead of from a keystroke. Text written this way must not open the
  * suggestion list: the user did not type it, so nothing is being completed. */

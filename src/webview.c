@@ -18,6 +18,7 @@
 #include "tabs.h"
 #include "history.h"
 #include "tor-core.h"
+#include "data-saver.h"
 #include "util.h"
 #include <gtk/gtk.h>
 #include <webkit/webkit.h>
@@ -807,6 +808,9 @@ gboolean on_webview_decide_policy(WebKitWebView *web_view,
     if (decision_type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
         nion_apply_content_blocking(tab, uri);
         nion_apply_site_javascript(tab, uri);
+        /* v2.3.7 (T2-10): a filter only affects requests made after it is
+         * applied, so the choice has to be re-applied on every navigation. */
+        nion_data_saver_apply(tab);
     }
 
     if (decision_type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION &&
