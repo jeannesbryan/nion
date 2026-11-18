@@ -35,6 +35,14 @@
 #define NION_MAX_BOOKMARKS 1000
 #define NION_MAX_BOOKMARKS_INPUT 5000
 #define NION_MAX_BOOKMARK_TITLE_CHARS 240
+/* Local browsing history (v2.3.0, roadmap T1-1). The store is a plain local
+ * file: no sync, no network, and Private Windows never get a path to it. */
+#define NION_MAX_HISTORY_FILE_BYTES (4 * 1024 * 1024)
+#define NION_MAX_HISTORY 2000
+#define NION_MAX_HISTORY_INPUT 20000
+#define NION_MAX_HISTORY_TITLE_CHARS 240
+#define NION_HISTORY_RETENTION_DAYS 90
+#define NION_HISTORY_FORMAT 1
 #define NION_MAX_CLOSED_TABS 10
 #define NION_MAX_SITE_ZOOM_FILE_BYTES (1024 * 1024)
 #define NION_MAX_SITE_ZOOM_ENTRIES 2048
@@ -64,6 +72,7 @@ typedef struct _NionApp NionApp;
 typedef struct _NionTab NionTab;
 typedef struct _NionDownload NionDownload;
 typedef struct _NionBookmark NionBookmark;
+typedef struct _NionHistoryEntry NionHistoryEntry;
 typedef struct _NionClearSiteRequest NionClearSiteRequest;
 typedef struct _NionClosedTab NionClosedTab;
 typedef struct _NionPermissionPrompt NionPermissionPrompt;
@@ -161,6 +170,15 @@ struct _NionTab {
 struct _NionBookmark {
     gchar *title;
     gchar *uri;
+};
+
+/* One visited page. Deduplicated by URI: revisiting a page moves the existing
+ * entry to the front and bumps its counter instead of appending a new row. */
+struct _NionHistoryEntry {
+    gchar *title;
+    gchar *uri;
+    gint64 last_visit;   /* seconds since the epoch */
+    guint visits;
 };
 
 struct _NionClosedTab {
@@ -325,6 +343,7 @@ struct _NionApp {
     gchar *session_file;
     gchar *downloads_file;
     gchar *bookmarks_file;
+    gchar *history_file;
     gchar *site_zoom_file;
     gchar *site_javascript_file;
     gchar *content_blocking_file;
@@ -333,6 +352,14 @@ struct _NionApp {
     gchar *bridge_file;
     gchar *content_filter_store_dir;
     GPtrArray *bookmarks;
+    /* NULL in a Private Window: private browsing must not write a URL trail,
+     * so the private app never receives a history path at all. */
+    GPtrArray *history;
+    GtkWidget *history_window;
+    GtkWidget *history_list;
+    GtkWidget *history_search_entry;
+    GtkWidget *history_result_label;
+    GtkWidget *history_empty_label;
     GHashTable *site_zoom;
     GHashTable *site_javascript_disabled;
     GHashTable *site_javascript_enabled;

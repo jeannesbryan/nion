@@ -11,6 +11,7 @@
 #include "content-filter.h"
 #include "permission.h"
 #include "settings.h"
+#include "history.h"
 #include "site-data.h"
 
 /* UI/tab operations that still live in main.c (Phase 6, NiOn 2.0.0).
@@ -774,6 +775,12 @@ static void nion_forget_site_local_state(NionApp *app, const gchar *uri)
         nion_clear_temporary_permissions_for_origin(app, origin);
         nion_stop_capture_for_origin(app, origin);
     }
+
+    /* "Forget this site" must forget the addresses too. Leaving the URL in the
+     * local history would make the promise false, so this site's entries go
+     * with the per-site rules, permissions and website data. Matched by host,
+     * so every path on the site is removed, not just the current page. */
+    nion_history_forget_site(app, uri);
 
     g_free(origin);
     g_free(site_key);

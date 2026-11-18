@@ -2418,6 +2418,10 @@ void nion_build_ui(NionApp *app)
     g_menu_append(menu, "Fullscreen", "win.fullscreen");
     g_menu_append(menu, "Print / Save as PDF…", "win.print");
     g_menu_append(menu, "Bookmarks", "win.bookmarks");
+    /* A Private Window keeps no history, so it does not get an entry that
+     * could only ever be empty or, worse, show the normal window's trail. */
+    if (!app->is_private)
+        g_menu_append(menu, "History (Ctrl+H)", "win.history");
     g_menu_append(menu, app->is_private ? "Private Downloads" : "Downloads", "win.downloads");
     g_menu_append(menu, "Preferences", "win.preferences");
     g_menu_append(menu, "Privacy & Leak Audit", "win.privacy-audit");

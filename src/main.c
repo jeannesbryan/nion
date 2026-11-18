@@ -28,6 +28,7 @@
 #include "tabs.h"
 #include "webview.h"
 #include "bookmarks.h"
+#include "history.h"
 #include "downloads.h"
 #include "settings.h"
 #include "site-data.h"
@@ -457,6 +458,7 @@ static void nion_install_actions(NionApp *app)
         { "downloads", action_downloads, NULL, NULL, NULL, {0} },
         { "bookmark-page", action_bookmark_page, NULL, NULL, NULL, {0} },
         { "bookmarks", action_bookmarks, NULL, NULL, NULL, {0} },
+        { "history", action_history, NULL, NULL, NULL, {0} },
         { "preferences", action_preferences, NULL, NULL, NULL, {0} },
         { "bridges", action_bridges, NULL, NULL, NULL, {0} },
         { "privacy-audit", action_privacy_audit, NULL, NULL, NULL, {0} },
@@ -496,6 +498,9 @@ static void nion_install_actions(NionApp *app)
     const gchar *show_all_tabs_accels[] = { "<Primary><Shift>a", NULL };
     const gchar *downloads_accels[] = { "<Primary>j", NULL };
     const gchar *bookmark_accels[] = { "<Primary>d", NULL };
+    /* Ctrl+H is free: the existing bindings are T, Shift+P, Shift+U, W,
+     * Shift+T, L/F6, R/F5, Shift+R, F, plus, minus, 0, Alt+R, P, J, D, F11. */
+    const gchar *history_accels[] = { "<Primary>h", NULL };
 
     gtk_application_set_accels_for_action(app->application, "win.new-tab", new_tab_accels);
     gtk_application_set_accels_for_action(app->application, "win.private-window", private_window_accels);
@@ -519,6 +524,7 @@ static void nion_install_actions(NionApp *app)
     gtk_application_set_accels_for_action(app->application, "win.show-all-tabs", show_all_tabs_accels);
     gtk_application_set_accels_for_action(app->application, "win.downloads", downloads_accels);
     gtk_application_set_accels_for_action(app->application, "win.bookmark-page", bookmark_accels);
+    gtk_application_set_accels_for_action(app->application, "win.history", history_accels);
 }
 
 static void on_activate(GtkApplication *application, gpointer user_data)
@@ -647,6 +653,12 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     };
     nion_downloads_set_callbacks(&download_callbacks);
 
+    static const NionHistoryCallbacks history_callbacks = {
+        .new_tab = nion_new_tab,
+        .set_status = nion_set_status,
+    };
+    nion_history_set_callbacks(&history_callbacks);
+
     static const NionSettingsCallbacks settings_callbacks = {
         .set_status = nion_set_status,
         .update_controls = nion_update_controls,
@@ -668,6 +680,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     nion_cleanup_stale_tor(app);
     nion_load_preferences(app);
     nion_load_bookmarks(app);
+    nion_history_load(app);
     nion_load_site_zoom(app);
     nion_load_site_javascript(app);
     nion_load_content_blocking(app);

@@ -16,6 +16,7 @@
 #include "load-error.h"
 #include "session.h"
 #include "tabs.h"
+#include "history.h"
 #include "util.h"
 #include <gtk/gtk.h>
 #include <webkit/webkit.h>
@@ -202,6 +203,13 @@ void on_webview_title_changed(GObject *object, GParamSpec *pspec, gpointer user_
 
     if (nion_current_tab(tab->app) == tab)
         nion_update_window_title(tab->app, tab);
+
+    /* Many pages report their real title after the load finished, so the entry
+     * was stored with the raw URL as a placeholder. Fill it in, but never
+     * overwrite a title that was already good. */
+    if (title && *title)
+        nion_history_upgrade_title(tab->app, webkit_web_view_get_uri(WEBKIT_WEB_VIEW(object)),
+                                   title);
 }
 
 void on_webview_favicon_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
@@ -457,6 +465,13 @@ void on_webview_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, gpo
         nion_schedule_session_save(app);
         if (!tab->load_failed && !tab->error_page && !tab->home_page)
             nion_detect_onion_location(tab);
+        /* Local history. Record at FINISHED, not STARTED, and only for a load
+         * that actually produced a page: a failed load, an error page or the
+         * internal home page is not something the user visited. The module
+         * itself refuses Private Windows and any non-http(s) URI. */
+        if (!tab->load_failed && !tab->error_page && !tab->home_page)
+            nion_history_record(app, webkit_web_view_get_uri(web_view),
+                                webkit_web_view_get_title(web_view));
         if (nion_current_tab(app) == tab) {
             gtk_widget_set_visible(app->progress_bar, FALSE);
             if (app->tor_ready && !tab->load_failed && !tab->error_page)

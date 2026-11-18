@@ -1,5 +1,70 @@
 # Changelog
 
+## 2.3.0 — Development
+
+Local browsing history, and four modules that had been wired to nothing since
+the 2.0.0 modularization.
+
+History is a local file and nothing else. It is not synced, never leaves the
+device, records only `http` and `https` pages, and refuses every other scheme
+instead of trying to be clever about it. Entries are deduplicated by address, so
+revisiting a page moves its row to the front and increments a counter rather
+than appending another copy; the store is capped at 2000 entries and anything
+older than 90 days is dropped, both on load and on every write, so the file
+cannot grow without bound. A page that reports its title after the load finished
+gets its placeholder replaced, but a title that was already good is never
+overwritten by a later worse one.
+
+Three rules decide where the history is *not* written. A Private Window never
+receives the history path at all, so even a mistaken call inside the module
+cannot record private browsing; the module also refuses on `is_private`
+explicitly, because the guard should not depend on the missing path staying
+missing. New Identity deletes the store, since a "new identity" that keeps the
+old URL trail only renames the old one. "Forget This Site" drops that host's
+entries along with the per-site rules and permissions, because a forget that
+leaves the address behind is not a forget.
+
+The window lists what was visited with the time and visit count, searches over
+title and address, opens a row in a new tab through the normal Tor-gated path,
+and can delete one entry or clear everything behind a confirmation. `Ctrl+H`
+opens it. A Private Window has no menu entry, because it has no history to show.
+
+### Fixed
+
+- **Four modules had callback hooks that nothing ever filled in.** Bookmarks,
+  downloads, settings and site-data each kept a `cb` struct and a
+  `nion_<module>_set_callbacks()` hook, but `main.c` never called the hook, so
+  every pointer stayed NULL and the thunks silently returned a NULL tab or
+  dropped the status text. Measured on the 2.2.6 binary:
+  `objdump -d build/nion | grep -c 'call.*nion_bookmarks_set_callbacks'` was 0.
+  The user-visible consequences: the bookmark star was permanently insensitive
+  and Ctrl+D, "Bookmark Current Page" and "Open" in the bookmarks window did
+  nothing; download "Retry" always answered "no active tab"; the site switches
+  read a NULL tab and showed the wrong state, and clearing a site's data never
+  reloaded it; preference changes never refreshed the controls. The new
+  `scripts/test-module-callbacks-stage1.sh` requires every declared hook to be
+  called from `main.c` and every registered struct to be fully initialised, and
+  it carries a built-in mutation check so a detector that stops detecting fails
+  loudly. Run against the 2.2.6 tree it reports exactly those four modules.
+
+### Added
+
+- **History store** (`src/history.c`): atomic `history.ini` in the profile,
+  2000 entry cap, 90 day retention, dedupe on revisit, http/https only,
+  corrupt-file quarantine, and one gate (`nion_history_uri_is_recordable`) that
+  every stored address passes through.
+- **History window**: search, open, delete one, clear all with confirmation,
+  `Ctrl+H`, and a menu entry that is absent in Private Windows.
+- `scripts/test-history-stage1.sh`: 60 behavioural checks linked against the
+  production `src/history.c`, plus wiring assertions and four mutations
+  (private recording, no expiry, clear leaving the file, non-http accepted),
+  each required to fail.
+
+### Changed
+
+- `NION_MAX_HISTORY`, `NION_MAX_HISTORY_FILE_BYTES`, `NION_HISTORY_RETENTION_DAYS`
+  and `NION_HISTORY_FORMAT` live in `src/types.h` next to the other profile limits.
+
 ## 2.2.6 — Stable
 
 A session that came back with the right shape and the wrong addresses, a tab

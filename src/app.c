@@ -14,6 +14,7 @@
 #include "session.h"
 #include "downloads.h"
 #include "bookmarks.h"
+#include "history.h"
 #include "tabs.h"
 #include "tor-core.h"
 #include "app.h"
@@ -330,6 +331,9 @@ void action_new_identity(GSimpleAction *action, GVariant *parameter, gpointer us
      * fingerprintable setting survives into the new identity. */
     nion_wipe_all_site_rules(app);
     nion_clear_all_temporary_permissions(app);
+    /* A new identity that kept the old URL trail would only be a renamed old
+     * identity, so the local history goes with the rest of the old state. */
+    nion_history_clear(app);
     if (app->private_windows) {
         for (guint i = 0; i < app->private_windows->len; i++) {
             NionApp *priv = g_ptr_array_index(app->private_windows, i);
@@ -433,6 +437,9 @@ void nion_prepare_dirs(NionApp *app)
     app->session_file = g_build_filename(app->data_dir, "session.ini", NULL);
     app->downloads_file = g_build_filename(app->data_dir, "downloads.ini", NULL);
     app->bookmarks_file = g_build_filename(app->data_dir, "bookmarks.ini", NULL);
+    /* Local browsing history. Private Windows deliberately never receive this
+     * path (see nion_open_private_window), so they cannot write a trail. */
+    app->history_file = g_build_filename(app->data_dir, "history.ini", NULL);
     app->site_zoom_file = g_build_filename(app->config_dir, "site-zoom.ini", NULL);
     app->site_javascript_file = g_build_filename(app->config_dir, "site-javascript.ini", NULL);
     app->content_blocking_file = g_build_filename(app->config_dir, "content-blocking.ini", NULL);
@@ -623,7 +630,11 @@ static gboolean nion_free_private_app_idle(gpointer user_data)
     g_clear_pointer(&app->download_dir, g_free);
     g_clear_pointer(&app->preferences_file, g_free);
     g_clear_pointer(&app->bookmarks_file, g_free);
-    
+    g_clear_pointer(&app->history_file, g_free);
+
+    if (app->history)
+        g_ptr_array_unref(app->history);
+
     if (app->bookmarks)
         g_ptr_array_unref(app->bookmarks);
     if (app->site_javascript_disabled)
@@ -747,6 +758,10 @@ static void nion_open_private_window(NionApp *source)
     app->search_engine = g_strdup(owner->search_engine ? owner->search_engine : "duckduckgo");
     app->preferences_file = g_strdup(owner->preferences_file);
     app->bookmarks_file = g_strdup(owner->bookmarks_file);
+    /* NiOn deliberately does NOT copy history_file here. Bookmarks are shared
+     * with the normal window by design (documented in the leak audit); a URL
+     * trail is not. Leaving the path NULL means even a mistaken call cannot
+     * record private browsing, because every write path requires the path. */
     app->download_dir = g_strdup(owner->download_dir);
     app->bookmarks = owner->bookmarks ? g_ptr_array_ref(owner->bookmarks)
                                      : g_ptr_array_new_with_free_func(nion_bookmark_free);
@@ -822,6 +837,10 @@ static void nion_cleanup(NionApp *app)
                 g_clear_pointer(&private_app->download_dir, g_free);
                 g_clear_pointer(&private_app->preferences_file, g_free);
                 g_clear_pointer(&private_app->bookmarks_file, g_free);
+                /* Expected NULL for a Private Window; freed defensively so a
+                 * future change cannot leak the entry list. */
+                g_clear_pointer(&private_app->history_file, g_free);
+                if (private_app->history) g_ptr_array_unref(private_app->history);
                 if (private_app->bookmarks) g_ptr_array_unref(private_app->bookmarks);
                 if (private_app->site_javascript_disabled) g_hash_table_unref(private_app->site_javascript_disabled);
                 if (private_app->site_javascript_enabled) g_hash_table_unref(private_app->site_javascript_enabled);
@@ -852,6 +871,7 @@ static void nion_cleanup(NionApp *app)
     g_clear_pointer(&app->session_file, g_free);
     g_clear_pointer(&app->downloads_file, g_free);
     g_clear_pointer(&app->bookmarks_file, g_free);
+    g_clear_pointer(&app->history_file, g_free);
     g_clear_pointer(&app->site_zoom_file, g_free);
     g_clear_pointer(&app->site_javascript_file, g_free);
     g_clear_pointer(&app->content_blocking_file, g_free);

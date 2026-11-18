@@ -74,6 +74,7 @@ executable(
   'src/tabs.c',
   'src/webview.c',
   'src/bookmarks.c',
+  'src/history.c',
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',
