@@ -54,6 +54,11 @@ static void nion_update_controls(NionApp *app)
     if (s_webview_callbacks.update_controls) s_webview_callbacks.update_controls(app);
 }
 
+static void nion_set_address_text(NionApp *app, const gchar *text)
+{
+    if (s_webview_callbacks.set_address_text) s_webview_callbacks.set_address_text(app, text);
+}
+
 static void nion_update_window_title(NionApp *app, NionTab *tab)
 {
     if (s_webview_callbacks.update_window_title) s_webview_callbacks.update_window_title(app, tab);
@@ -238,14 +243,14 @@ void on_webview_uri_changed(GObject *object, GParamSpec *pspec, gpointer user_da
         return;
 
     if (tab->display_uri_override) {
-        gtk_editable_set_text(GTK_EDITABLE(app->address), tab->display_uri_override);
+        nion_set_address_text(app, tab->display_uri_override);
         nion_update_bookmark_button(app);
         return;
     }
 
     const gchar *uri = webkit_web_view_get_uri(WEBKIT_WEB_VIEW(object));
     if (uri && !tab->home_page && !g_str_equal(uri, "about:blank"))
-        gtk_editable_set_text(GTK_EDITABLE(app->address), uri);
+        nion_set_address_text(app, uri);
     nion_update_bookmark_button(app);
 }
 

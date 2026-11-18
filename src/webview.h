@@ -39,6 +39,10 @@ typedef struct {
     /* v2.1: the internal Start Page's "New Identity" button routes here
      * (nion://new-identity), activating the window action. */
     void (*request_new_identity)(NionApp *app);
+    /* v2.3.1: fill the address bar from code without opening the autocomplete
+     * list. webview.c updates the bar when a page starts loading, and that is
+     * not the user typing, so it must not trigger suggestions. */
+    void (*set_address_text)(NionApp *app, const gchar *text);
 } NionWebviewCallbacks;
 
 void nion_webview_set_callbacks(const NionWebviewCallbacks *callbacks);

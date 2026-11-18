@@ -43,6 +43,10 @@
 #define NION_MAX_HISTORY_TITLE_CHARS 240
 #define NION_HISTORY_RETENTION_DAYS 90
 #define NION_HISTORY_FORMAT 1
+/* Address bar autocomplete (v2.3.1, roadmap T1-2). Suggestions are built only
+ * from data already on this device (history, bookmarks, open tabs); no
+ * keystroke ever leaves the machine to be completed somewhere else. */
+#define NION_AUTOCOMPLETE_MAX_RESULTS 8
 #define NION_MAX_CLOSED_TABS 10
 #define NION_MAX_SITE_ZOOM_FILE_BYTES (1024 * 1024)
 #define NION_MAX_SITE_ZOOM_ENTRIES 2048
@@ -289,6 +293,20 @@ struct _NionApp {
     GtkWidget *find_prev_button;
     GtkWidget *find_next_button;
     GtkWidget *find_close_button;
+
+    /* Address bar autocomplete (v2.3.1, roadmap T1-2). A GtkRevealer with a
+     * GtkListBox sits under the toolbar instead of a GtkPopover: an overlay
+     * popover above an accelerated WebKitGTK view flickers badly on lightweight
+     * X11 window managers, the same reason the Site Information panel is a
+     * transient window. The list takes a little vertical space while it is open
+     * and gives it back when it closes. */
+    GtkWidget *autocomplete_revealer;
+    GtkWidget *autocomplete_scroller;
+    GtkWidget *autocomplete_list;
+    /* Set while the address bar is filled from code (tab switch, load
+     * finished). Without this flag the "changed" handler would open the
+     * suggestion list on every tab switch, as if the browser were typing. */
+    gboolean address_updating;
 
     WebKitNetworkSession *network_session;
 

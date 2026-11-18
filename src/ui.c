@@ -22,6 +22,7 @@
 #include "bridge.h"
 #include "site-data.h"
 #include "app.h"
+#include "autocomplete.h"
 #include "ui.h"
 
 /* Tab creation / current-tab / status / action-table operations that
@@ -29,6 +30,11 @@
  * implementations via nion_ui_set_callbacks() so this module never
  * calls into main.c directly. */
 static NionUiCallbacks cb;
+
+/* Address bar autocomplete (v2.3.1). Defined further down, next to the code
+ * that fills and dismisses the list; declared here because the address bar
+ * setter, which sits above them, must be able to dismiss the list. */
+static void nion_autocomplete_hide(NionApp *app);
 
 static NionTab *
 nion_new_tab(NionApp *app, const gchar *uri, gboolean select)
@@ -689,6 +695,287 @@ static void on_address_activate(GtkEntry *entry, gpointer user_data)
     nion_go_to_address(user_data);
 }
 
+/* Every code path that writes the address bar goes through here instead of
+ * calling gtk_editable_set_text() directly. The flag suppresses the "changed"
+ * handler while the text is replaced, and the list is dismissed explicitly:
+ * switching tabs, or a page finishing a load, must not look like the user
+ * typing a query. */
+void nion_set_address_text(NionApp *app, const gchar *text)
+{
+    if (!app || !app->address)
+        return;
+
+    app->address_updating = TRUE;
+    gtk_editable_set_text(GTK_EDITABLE(app->address), text ? text : "");
+    app->address_updating = FALSE;
+    nion_autocomplete_hide(app);
+}
+
+/* ---------------------------------------------------------------- *
+ * Address bar autocomplete (v2.3.1, roadmap T1-2)
+ *
+ * Candidates come from three local places only: the history store, the
+ * bookmark list, and the tabs that are open right now. The ranking rules live
+ * in src/autocomplete.c as a GTK-free model so they can be tested directly.
+ *
+ * The list is a GtkListBox inside a GtkRevealer rather than a GtkPopover:
+ * overlaying a popover on an accelerated WebKitGTK view flickers on
+ * lightweight X11 window managers (see the Site Information comment above).
+ * The trade-off is that the page is pushed down while the list is open.
+ * ---------------------------------------------------------------- */
+
+static void
+nion_autocomplete_clear_rows(NionApp *app)
+{
+    if (!app || !app->autocomplete_list)
+        return;
+
+    GtkWidget *row = gtk_widget_get_first_child(app->autocomplete_list);
+    while (row) {
+        GtkWidget *next = gtk_widget_get_next_sibling(row);
+        gtk_list_box_remove(GTK_LIST_BOX(app->autocomplete_list), row);
+        row = next;
+    }
+}
+
+static void
+nion_autocomplete_hide(NionApp *app)
+{
+    if (!app || !app->autocomplete_revealer)
+        return;
+    gtk_revealer_set_reveal_child(GTK_REVEALER(app->autocomplete_revealer), FALSE);
+}
+
+/* The tabs open in this window only. A Private Window is a separate NionApp
+ * with its own notebook, so it can never list the normal window's tabs; it
+ * shares the bookmark list with the normal window by design (see the leak
+ * audit), and has no history store at all. */
+static GPtrArray *
+nion_autocomplete_open_tabs(NionApp *app)
+{
+    GPtrArray *extra = g_ptr_array_new_with_free_func(nion_autocomplete_item_free);
+    if (!app || !app->notebook)
+        return extra;
+
+    const gint pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook));
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(app->notebook), i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (!tab || !tab->web_view || tab->home_page)
+            continue;
+
+        const gchar *uri = webkit_web_view_get_uri(tab->web_view);
+        if (!uri || !*uri || g_str_equal(uri, "about:blank"))
+            continue;
+        const gchar *title = webkit_web_view_get_title(tab->web_view);
+        g_ptr_array_add(extra,
+                        nion_autocomplete_item_new(uri, title, NION_AUTOCOMPLETE_TAB, 0));
+    }
+
+    return extra;
+}
+
+static const gchar *
+nion_autocomplete_source_label(NionAutocompleteSource source)
+{
+    switch (source) {
+    case NION_AUTOCOMPLETE_TAB:
+        return "TAB";
+    case NION_AUTOCOMPLETE_BOOKMARK:
+        return "BOOKMARK";
+    case NION_AUTOCOMPLETE_HISTORY:
+    default:
+        return "HISTORY";
+    }
+}
+
+static GtkWidget *
+nion_autocomplete_build_row(NionAutocompleteItem *item)
+{
+    GtkWidget *row = gtk_list_box_row_new();
+    GtkWidget *line = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *stack = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *title = gtk_label_new(item->title && *item->title ? item->title : item->uri);
+    GtkWidget *address = gtk_label_new(item->uri);
+    GtkWidget *source = gtk_label_new(nion_autocomplete_source_label(item->source));
+
+    gtk_widget_set_margin_start(line, 8);
+    gtk_widget_set_margin_end(line, 8);
+    gtk_widget_set_margin_top(line, 4);
+    gtk_widget_set_margin_bottom(line, 4);
+
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
+    gtk_label_set_ellipsize(GTK_LABEL(title), PANGO_ELLIPSIZE_END);
+    gtk_label_set_xalign(GTK_LABEL(address), 0.0f);
+    gtk_label_set_ellipsize(GTK_LABEL(address), PANGO_ELLIPSIZE_MIDDLE);
+    gtk_widget_add_css_class(address, "nion-muted");
+    gtk_widget_add_css_class(source, "nion-muted");
+    gtk_widget_set_valign(source, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(stack, TRUE);
+
+    gtk_box_append(GTK_BOX(stack), title);
+    gtk_box_append(GTK_BOX(stack), address);
+    gtk_box_append(GTK_BOX(line), stack);
+    gtk_box_append(GTK_BOX(line), source);
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), line);
+
+    /* The row keeps its own copy of the URI: the item it was built from is
+     * freed as soon as the suggestion set is released. */
+    g_object_set_data_full(G_OBJECT(row), "nion-uri", g_strdup(item->uri), g_free);
+    gtk_widget_set_tooltip_text(row, item->uri);
+    return row;
+}
+
+/* Rebuild the list for whatever is in the address bar right now. */
+static void
+nion_autocomplete_refresh(NionApp *app)
+{
+    if (!app || !app->autocomplete_list || !app->address) {
+        return;
+    }
+
+    /* Never suggest while the bar is being filled from code, and never while
+     * Tor is down: the address bar is insensitive then, and a list of links
+     * that cannot be opened would only invite a failed request. */
+    if (app->address_updating || !app->tor_ready) {
+        nion_autocomplete_hide(app);
+        return;
+    }
+
+    const gchar *text = gtk_editable_get_text(GTK_EDITABLE(app->address));
+    GPtrArray *extra = nion_autocomplete_open_tabs(app);
+    GPtrArray *matches = nion_autocomplete_suggest(app, extra, text,
+                                                   NION_AUTOCOMPLETE_MAX_RESULTS);
+    g_ptr_array_unref(extra);
+
+    nion_autocomplete_clear_rows(app);
+    for (guint i = 0; i < matches->len; i++) {
+        NionAutocompleteItem *item = g_ptr_array_index(matches, i);
+        gtk_list_box_append(GTK_LIST_BOX(app->autocomplete_list),
+                            nion_autocomplete_build_row(item));
+    }
+    gboolean any = gtk_widget_get_first_child(app->autocomplete_list) != NULL;
+    g_ptr_array_unref(matches);
+
+    {
+        GtkListBoxRow *first =
+            gtk_list_box_get_row_at_index(GTK_LIST_BOX(app->autocomplete_list), 0);
+        if (first)
+            gtk_list_box_select_row(GTK_LIST_BOX(app->autocomplete_list), first);
+    }
+
+    gtk_revealer_set_reveal_child(GTK_REVEALER(app->autocomplete_revealer), any);
+}
+
+/* Activating a row replaces the query with the full address and navigates
+ * through the same gate a typed address takes. */
+static void
+on_autocomplete_row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer user_data)
+{
+    (void)list;
+    NionApp *app = user_data;
+    if (!app || !row)
+        return;
+
+    const gchar *uri = g_object_get_data(G_OBJECT(row), "nion-uri");
+    if (!uri || !*uri)
+        return;
+
+    nion_set_address_text(app, uri);
+    gtk_widget_grab_focus(app->address);
+    nion_go_to_address(app);
+}
+
+static void on_autocomplete_entry_changed(GtkEditable *editable, gpointer user_data)
+{
+    (void)editable;
+    nion_autocomplete_refresh(user_data);
+}
+
+static gboolean
+on_autocomplete_address_key(GtkEventControllerKey *controller, guint keyval,
+                            guint keycode, GdkModifierType state, gpointer user_data)
+{
+    (void)controller;
+    (void)keycode;
+    (void)state;
+    NionApp *app = user_data;
+    if (!app || !app->autocomplete_revealer)
+        return FALSE;
+
+    gboolean open = gtk_revealer_get_reveal_child(GTK_REVEALER(app->autocomplete_revealer));
+    if (!open)
+        return FALSE;
+
+    if (keyval == GDK_KEY_Down) {
+        GtkListBoxRow *row =
+            gtk_list_box_get_row_at_index(GTK_LIST_BOX(app->autocomplete_list), 0);
+        if (!row)
+            return FALSE;
+        gtk_list_box_select_row(GTK_LIST_BOX(app->autocomplete_list), row);
+        gtk_widget_grab_focus(app->autocomplete_list);
+        return TRUE;
+    }
+    if (keyval == GDK_KEY_Escape) {
+        nion_autocomplete_hide(app);
+        return TRUE;
+    }
+    if (keyval == GDK_KEY_Tab) {
+        /* Leaving the bar by keyboard closes the list. Focus is not watched
+         * otherwise, so this is the one keyboard exit that has to be handled
+         * explicitly; the handler returns FALSE so Tab still moves focus. */
+        nion_autocomplete_hide(app);
+        return FALSE;
+    }
+    return FALSE;
+}
+
+static gboolean
+on_autocomplete_list_key(GtkEventControllerKey *controller, guint keyval,
+                         guint keycode, GdkModifierType state, gpointer user_data)
+{
+    (void)controller;
+    (void)keycode;
+    (void)state;
+    NionApp *app = user_data;
+    if (!app)
+        return FALSE;
+
+    if (keyval == GDK_KEY_Escape) {
+        nion_autocomplete_hide(app);
+        gtk_widget_grab_focus(app->address);
+        return TRUE;
+    }
+    if (keyval == GDK_KEY_Up) {
+        GtkListBoxRow *selected =
+            gtk_list_box_get_selected_row(GTK_LIST_BOX(app->autocomplete_list));
+        GtkListBoxRow *first =
+            gtk_list_box_get_row_at_index(GTK_LIST_BOX(app->autocomplete_list), 0);
+        /* Leaving the list upward returns to the bar, the way every address
+         * bar behaves. */
+        if (!selected || selected == first) {
+            gtk_widget_grab_focus(app->address);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* Clicking the page dismisses the list. This is done on the notebook rather
+ * than by watching focus: focus order between the entry, the rows and the
+ * page is not something this machine can verify visually, so the dismissal is
+ * tied to an event whose meaning is unambiguous. */
+static void
+on_autocomplete_page_click(GtkGestureClick *gesture, gint n_press, gdouble x, gdouble y,
+                           gpointer user_data)
+{
+    (void)gesture;
+    (void)n_press;
+    (void)x;
+    (void)y;
+    nion_autocomplete_hide(user_data);
+}
+
 static gboolean nion_tab_can_go_back(NionTab *tab)
 {
     if (!tab)
@@ -836,13 +1123,13 @@ void nion_update_controls(NionApp *app)
 
     if (tab) {
         if (tab->display_uri_override) {
-            gtk_editable_set_text(GTK_EDITABLE(app->address), tab->display_uri_override);
+            nion_set_address_text(app, tab->display_uri_override);
         } else {
             const gchar *uri = webkit_web_view_get_uri(tab->web_view);
             if (uri && !tab->home_page && !g_str_equal(uri, "about:blank"))
-                gtk_editable_set_text(GTK_EDITABLE(app->address), uri);
+                nion_set_address_text(app, uri);
             else if (tab->home_page || !uri || g_str_equal(uri, "about:blank"))
-                gtk_editable_set_text(GTK_EDITABLE(app->address), "");
+                nion_set_address_text(app, "");
         }
     }
 
@@ -2147,6 +2434,8 @@ void nion_apply_css(void)
         ".nion-toolbar entry { min-height: 32px; }"
         ".nion-find-bar { border-top: 1px solid alpha(currentColor,0.10); border-bottom: 1px solid alpha(currentColor,0.10); }"
         ".nion-find-bar button { min-width: 30px; min-height: 30px; padding: 2px; }"
+        ".nion-autocomplete { border-bottom: 1px solid alpha(currentColor,0.10); }"
+        ".nion-autocomplete row { border-radius: 0; }"
         ".nion-onion-badge { min-width: 54px; padding: 3px 10px; border-radius: 999px; font-weight: 700; }"
         ".nion-site-info-warning { font-weight: 800; }"
         ".nion-site-info-title { font-weight: 800; font-size: 1.08em; }"
@@ -2460,6 +2749,38 @@ void nion_build_ui(NionApp *app)
     gtk_box_append(GTK_BOX(toolbar), app->bookmark_button);
     gtk_box_append(GTK_BOX(toolbar), app->menu_button);
 
+    /* Address bar autocomplete (v2.3.1). Placed directly under the toolbar and
+     * collapsed by default, so the page keeps its full height until the user
+     * actually types something the list can complete. */
+    app->autocomplete_revealer = gtk_revealer_new();
+    gtk_revealer_set_transition_type(GTK_REVEALER(app->autocomplete_revealer),
+                                     GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+    gtk_revealer_set_transition_duration(GTK_REVEALER(app->autocomplete_revealer), 120);
+    /* The revealer stays visible and mapped; with reveal-child FALSE it asks
+     * for no space. Hiding the widget itself would make it impossible for the
+     * list to ever appear again. */
+    gtk_revealer_set_reveal_child(GTK_REVEALER(app->autocomplete_revealer), FALSE);
+    app->autocomplete_scroller = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(app->autocomplete_scroller),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    /* Natural height with a ceiling: a long list scrolls instead of pushing
+     * the page out of the way. */
+    gtk_scrolled_window_set_propagate_natural_height(
+        GTK_SCROLLED_WINDOW(app->autocomplete_scroller), TRUE);
+    gtk_scrolled_window_set_max_content_height(
+        GTK_SCROLLED_WINDOW(app->autocomplete_scroller), 210);
+    app->autocomplete_list = gtk_list_box_new();
+    gtk_list_box_set_selection_mode(GTK_LIST_BOX(app->autocomplete_list),
+                                    GTK_SELECTION_SINGLE);
+    gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(app->autocomplete_list), TRUE);
+    gtk_widget_add_css_class(app->autocomplete_list, "nion-autocomplete");
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(app->autocomplete_scroller),
+                                  app->autocomplete_list);
+    gtk_revealer_set_child(GTK_REVEALER(app->autocomplete_revealer),
+                           app->autocomplete_scroller);
+    gtk_box_append(GTK_BOX(root), app->autocomplete_revealer);
+    gtk_box_reorder_child_after(GTK_BOX(root), app->autocomplete_revealer, toolbar);
+
     app->find_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_widget_add_css_class(app->find_bar, "nion-find-bar");
     gtk_widget_set_margin_top(app->find_bar, 4);
@@ -2523,6 +2844,30 @@ void nion_build_ui(NionApp *app)
     gtk_box_append(GTK_BOX(root), app->status_label);
 
     g_signal_connect(app->address, "activate", G_CALLBACK(on_address_activate), app);
+
+    /* Autocomplete wiring (v2.3.1): a keystroke rebuilds the list, Down moves
+     * into it, Up leaves it, Escape dismisses it, and a click on the page
+     * dismisses it too. */
+    g_signal_connect(app->address, "changed", G_CALLBACK(on_autocomplete_entry_changed), app);
+    GtkEventController *address_keys = gtk_event_controller_key_new();
+    g_signal_connect(address_keys, "key-pressed",
+                     G_CALLBACK(on_autocomplete_address_key), app);
+    gtk_widget_add_controller(app->address, address_keys);
+    GtkEventController *list_keys = gtk_event_controller_key_new();
+    g_signal_connect(list_keys, "key-pressed",
+                     G_CALLBACK(on_autocomplete_list_key), app);
+    gtk_widget_add_controller(app->autocomplete_list, list_keys);
+    g_signal_connect(app->autocomplete_list, "row-activated",
+                     G_CALLBACK(on_autocomplete_row_activated), app);
+    GtkGesture *page_click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(page_click), GDK_BUTTON_PRIMARY);
+    /* Capture phase: a WebKitWebView handles (and claims) its own button
+     * events, so a bubbling gesture on the notebook would never be told about
+     * a click that landed on the page itself. */
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(page_click),
+                                              GTK_PHASE_CAPTURE);
+    g_signal_connect(page_click, "released", G_CALLBACK(on_autocomplete_page_click), app);
+    gtk_widget_add_controller(app->notebook, GTK_EVENT_CONTROLLER(page_click));
     g_signal_connect(app->back_button, "clicked", G_CALLBACK(on_back_clicked), app);
     g_signal_connect(app->forward_button, "clicked", G_CALLBACK(on_forward_clicked), app);
     g_signal_connect(app->reload_button, "clicked", G_CALLBACK(on_reload_clicked), app);

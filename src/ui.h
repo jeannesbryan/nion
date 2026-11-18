@@ -23,6 +23,11 @@ void nion_update_controls(NionApp *app);
 void nion_update_window_title(NionApp *app, NionTab *tab);
 void nion_update_progress(NionApp *app, NionTab *tab);
 void nion_update_onion_button(NionApp *app);
+
+/* Fill the address bar from code (tab switch, navigation progress, session
+ * restore) instead of from a keystroke. Text written this way must not open the
+ * suggestion list: the user did not type it, so nothing is being completed. */
+void nion_set_address_text(NionApp *app, const gchar *text);
 void nion_load_uri(NionTab *tab, const gchar *uri);
 void nion_load_home(NionTab *tab);
 void nion_refresh_home_pages(NionApp *app);

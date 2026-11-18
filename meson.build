@@ -75,6 +75,7 @@ executable(
   'src/webview.c',
   'src/bookmarks.c',
   'src/history.c',
+  'src/autocomplete.c',
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',

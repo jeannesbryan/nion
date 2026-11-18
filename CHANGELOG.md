@@ -1,5 +1,73 @@
 # Changelog
 
+## 2.3.1 — Development
+
+The address bar now completes what you type without asking anyone else about it.
+
+Every other browser that suggests as you type sends the partial query somewhere
+before you press Enter, which tells a third party what you were considering
+reading even if you then change your mind. NiOn does not. The candidates are the
+local history store, the bookmark list, and the tabs that are already open in
+this window, and there is no code path from a keystroke to the network. A miss
+returns nothing at all, which is the honest answer: NiOn does not know the page
+you are thinking of, and it will not go and ask.
+
+Ordering is decided by how the address was typed. An address whose beginning
+matches comes first, then an address with the query somewhere inside it, then a
+title where every word matches. Inside one tier an open tab outranks a page you
+visited, which outranks a bookmark, and a more recent visit outranks an older
+one. Ties fall back to the order the candidates were collected in, so the list
+does not reshuffle between keystrokes and a row does not move out from under the
+pointer. One row per address: the same page is often a tab, a history entry and
+a bookmark at once, and three copies of it would only push the other matches off
+a list capped at eight rows.
+
+Only `http` and `https` addresses are ever offered, through the same gate the
+history store already uses. A suggestion therefore cannot hand the address bar a
+scheme NiOn refuses to browse, and the same rule is applied to bookmarks and to
+open tabs rather than to history alone.
+
+The list is drawn under the toolbar, not floated over the page. An overlay
+popover above an accelerated WebKitGTK view flickers badly on lightweight X11
+window managers, which is why the site information panel is a separate window;
+reusing that lesson cost a strip of vertical space while the list is open and
+saved a class of rendering bugs this machine cannot even photograph.
+
+Filling the address bar from code is separated from typing. Switching tabs or a
+page finishing a load writes the bar through one setter, and that setter
+suppresses the list, so the browser never appears to be completing an address
+nobody typed.
+
+### Fixed
+
+- **A use-after-free in the suggestion model, found before the model was wired
+  to anything.** `nion_autocomplete_suggest()` ranked a candidate collection and
+  then released it, but the ranked array only borrowed the items it returned, so
+  the caller was handed pointers into freed memory. The collection's free
+  function destroyed every item on unref. `suggest()` now returns an array that
+  owns its items, and the ownership contract is checked under AddressSanitizer
+  rather than by reading the code.
+
+### Added
+
+- **Address bar autocomplete** (`src/autocomplete.c`): a GTK-free ranking model
+  (prefix, substring, title terms; source priority; recency; per-URI dedupe;
+  result cap) plus a collector that reads history, bookmarks and open tabs
+  through the history URI gate.
+- **Suggestion list** in `src/ui.c`: a `GtkRevealer` and `GtkListBox` under the
+  toolbar, opened by typing, navigated with the arrow keys, activated by click
+  or Enter, dismissed by Escape, by an empty result, or by clicking the page.
+  Each row shows the title, the address, and where the suggestion came from.
+- `nion_set_address_text()`: the single entry point for filling the address bar
+  from code, so a programmatic fill can never open the list.
+- `scripts/test-autocomplete-stage2.sh`: 49 behavioural checks linked against
+  the production `src/autocomplete.c`, the same run repeated under
+  AddressSanitizer, wiring assertions that forbid writing the address bar
+  outside the setter, and nine mutations (duplicate rows, flattened prefix tier,
+  single-term title match, history gate dropped, bookmark gate dropped, open tab
+  gate dropped, reversed recency, reversed source priority, borrowed result),
+  each required to fail.
+
 ## 2.3.0 — Development
 
 Local browsing history, and four modules that had been wired to nothing since
