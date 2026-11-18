@@ -50,8 +50,22 @@ grep -q 'gtk_widget_compute_bounds' src/tabs.c || fail "hidden tabs must be dete
 # path cannot be driven end to end; this assertion is what keeps it wired.
 grep -q 'G_CALLBACK(on_tab_overflow_popover_show), app' src/tabs.c \
   || fail "the popover does not rebuild when it opens, so the toolbar button would show a stale or empty list"
-grep -q 'nion_rebuild_tab_overflow((NionApp \*)user_data);' src/tabs.c \
-  || fail "the popover show handler no longer rebuilds the menu"
+# Assert the property, not a literal call spelling: the handler was refactored to
+# bind the app pointer to a local so it can also clear the filter, and matching
+# the old text made a correct change look like a regression.
+show_body=$(python3 - src/tabs.c <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+match = re.search(r"on_tab_overflow_popover_show\(GtkPopover \*popover, gpointer user_data\)\s*\{(.*?)\n\}", text, re.S)
+if not match:
+    print("MISSING")
+else:
+    body = match.group(1)
+    print("REBUILDS" if "nion_rebuild_tab_overflow(" in body else "NO_REBUILD")
+PY
+)
+[[ "$show_body" == "REBUILDS" ]] \
+  || fail "the popover show handler no longer rebuilds the menu (got ${show_body})"
 
 grep -q '{ "show-all-tabs", action_show_all_tabs' src/main.c || fail "win.show-all-tabs action is missing"
 grep -q '"<Primary><Shift>a"' src/main.c || fail "Ctrl+Shift+A is not bound to the overflow menu"

@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.3.4 — Development
+
+The tab list can be filtered, so thirty open tabs stop being a wall.
+
+The overflow menu names every open tab, which is enough for three and useless
+for thirty: finding one of them meant reading the whole list. It now has a field
+at the top. Typing narrows the list live, the heading says how many of how many
+survived, and a query that matches nothing says so instead of showing an empty
+box that looks broken.
+
+Every word of the query must match, and each word may match either the tab title
+or its address. Requiring all of them is what makes typing narrow: with "any
+word" the list would sometimes grow as you typed, and a filter that moves in both
+directions is a filter nobody trusts. Matching is case-folded with
+g_utf8_casefold, so a title in another script behaves the way a reader expects
+rather than only working for ASCII.
+
+The field sits above the scroll area and outside the container that is rebuilt on
+every keystroke, so a rebuild can never destroy the widget being typed into. Each
+time the menu opens it starts from the full list: keeping a stale filter would
+silently hide tabs from someone who opened the menu to find one, which is the
+exact problem the menu exists to solve.
+
+Escape in the field empties it, and on an already empty field it closes the menu.
+GtkSearchEntry only clears, so without that the key everyone reaches for left the
+menu looking stuck open.
+
+### Added
+
+- **`src/tab-filter.c`**: a GTK-free matching module (active-query test,
+  case-folded per-term matching across title and address).
+- **Filter field** in the overflow menu, with a live heading
+  ("3 of 14 tabs match") and an explained empty result.
+- `scripts/test-tab-filter-stage1.sh`: 40 behavioural checks linked against the
+  production `src/tab-filter.c`, wiring assertions (field outside the rebuilt
+  container, reset on open, keyboard reachable from the field), five mutations,
+  and a real-window pass that types into the actual GTK menu with xdotool and
+  watches the row count narrow.
+
+### Notes
+
+- The window pass found two things a source-level test could not: a filtered row
+  still activates and switches tabs (tab 0 to tab 1), and reopening the menu
+  really does restore the full list after the filter held text when it closed.
+- NiOn already logs two GTK criticals about `GtkImage` sizing during the first
+  layout of a window. Measured against an unmodified build of the previous
+  commit, so they are pre-existing and unrelated to this change; the new test
+  asserts its own run reports none, which is the property that matters here.
+
 ## 2.3.3 — Development
 
 Pages can be saved for later and read with no network at all.

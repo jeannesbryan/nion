@@ -300,6 +300,13 @@ struct _NionApp {
     GtkWidget *tab_overflow_button;
     GtkWidget *tab_overflow_popover;
     GtkWidget *tab_overflow_box;
+    /* v2.3.4 (T2-6): the overflow menu lists every open tab, which stops being
+     * useful around thirty tabs. The field narrows that list. It lives outside
+     * the rebuilt container, so typing does not destroy the entry mid-word. */
+    GtkWidget *tab_filter_entry;
+    /* Set while the field is cleared from code (each time the menu opens), so a
+     * programmatic clear does not look like the user typing. */
+    gboolean tab_filter_updating;
     GtkWidget *progress_bar;
     GtkWidget *status_label;
     GtkWidget *downloads_panel;

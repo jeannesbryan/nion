@@ -12,6 +12,7 @@
 #include "session.h"
 #include "navigation.h"
 #include "tor-status.h"
+#include "tab-filter.h"
 #include "util.h"
 #include <gtk/gtk.h>
 #include <webkit/webkit.h>
@@ -1212,6 +1213,28 @@ static GtkWidget *nion_tab_overflow_row(NionApp *app, NionTab *tab,
     return button;
 }
 
+/* v2.3.4 (T2-6): the query currently in the filter field, or NULL when the
+ * menu is showing everything. */
+static const gchar *
+nion_tab_filter_query(NionApp *app)
+{
+    if (!app || !app->tab_filter_entry)
+        return NULL;
+    const gchar *text = gtk_editable_get_text(GTK_EDITABLE(app->tab_filter_entry));
+    return nion_tab_filter_is_active(text) ? text : NULL;
+}
+
+/* The title and address a row is matched against. Kept in one place so the
+ * filter and the row drawn for it can never disagree about what a tab is
+ * called. */
+static void
+nion_tab_filter_fields(NionTab *tab, gchar **title, gchar **uri)
+{
+    *title = tab ? nion_tab_overflow_title(tab) : g_strdup("");
+    const gchar *recorded = tab ? nion_tab_recorded_uri(tab) : NULL;
+    *uri = g_strdup(recorded ? recorded : "");
+}
+
 void nion_rebuild_tab_overflow(NionApp *app)
 {
     if (!app || !app->tab_overflow_box || !app->notebook)
@@ -1229,11 +1252,39 @@ void nion_rebuild_tab_overflow(NionApp *app)
     gint current = gtk_notebook_get_current_page(notebook);
     guint hidden = nion_count_hidden_tabs(app);
 
-    gchar *heading_text = (pages <= 0)
-        ? g_strdup("No open tabs")
-        : (hidden > 0
-            ? g_strdup_printf("%d tabs \u00b7 %u not visible", pages, hidden)
-            : g_strdup_printf("%d tabs", pages));
+    const gchar *query = nion_tab_filter_query(app);
+
+    /* Count the survivors first: the heading has to describe what is on screen,
+     * not what is open, or a filtered list reads as a list with missing tabs. */
+    guint shown = 0;
+    for (gint i = 0; i < pages; i++) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
+        if (!tab)
+            continue;
+        if (!query) {
+            shown++;
+            continue;
+        }
+        gchar *title = NULL;
+        gchar *uri = NULL;
+        nion_tab_filter_fields(tab, &title, &uri);
+        if (nion_tab_filter_matches(query, title, uri))
+            shown++;
+        g_free(title);
+        g_free(uri);
+    }
+
+    gchar *heading_text;
+    if (pages <= 0) {
+        heading_text = g_strdup("No open tabs");
+    } else if (query) {
+        heading_text = g_strdup_printf("%u of %d tabs match", shown, pages);
+    } else if (hidden > 0) {
+        heading_text = g_strdup_printf("%d tabs \u00b7 %u not visible", pages, hidden);
+    } else {
+        heading_text = g_strdup_printf("%d tabs", pages);
+    }
     GtkWidget *heading = gtk_label_new(heading_text);
     gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
     gtk_widget_add_css_class(heading, "nion-tab-overflow-heading");
@@ -1246,6 +1297,18 @@ void nion_rebuild_tab_overflow(NionApp *app)
         NionTab *tab = page ? g_object_get_data(G_OBJECT(page), "nion-tab") : NULL;
         if (!tab)
             continue;
+
+        if (query) {
+            gchar *title = NULL;
+            gchar *uri = NULL;
+            nion_tab_filter_fields(tab, &title, &uri);
+            gboolean keep = nion_tab_filter_matches(query, title, uri);
+            g_free(title);
+            g_free(uri);
+            if (!keep)
+                continue;
+        }
+
         GtkWidget *label = gtk_notebook_get_tab_label(notebook, page);
         graphene_rect_t bounds;
         gboolean visible = label &&
@@ -1255,13 +1318,25 @@ void nion_rebuild_tab_overflow(NionApp *app)
                        nion_tab_overflow_row(app, tab, i == current, !visible));
     }
 
+    /* An empty list must say so. A blank menu with a heading reading "0 of 14
+     * tabs match" looks like a bug unless the reason is stated. */
+    if (query && shown == 0) {
+        GtkWidget *empty = gtk_label_new("No tab matches this filter");
+        gtk_label_set_xalign(GTK_LABEL(empty), 0.0f);
+        gtk_widget_add_css_class(empty, "nion-muted");
+        gtk_widget_set_margin_start(empty, 8);
+        gtk_widget_set_margin_top(empty, 4);
+        gtk_box_append(GTK_BOX(app->tab_overflow_box), empty);
+    }
+
     if (g_getenv("NION_TAB_DEBUG")) {
         gint rows = 0;
         for (GtkWidget *w = gtk_widget_get_first_child(app->tab_overflow_box);
              w; w = gtk_widget_get_next_sibling(w))
             rows++;
-        g_printerr("tab-overflow-menu rows=%d tabs=%d hidden=%u current=%d\n",
-                   rows, pages, hidden, current);
+        g_printerr("tab-overflow-menu rows=%d tabs=%d hidden=%u current=%d "
+                   "filtered=%d shown=%u\n",
+                   rows, pages, hidden, current, query ? 1 : 0, shown);
     }
 }
 
@@ -1279,7 +1354,76 @@ void nion_show_tab_overflow(NionApp *app)
 static void on_tab_overflow_popover_show(GtkPopover *popover, gpointer user_data)
 {
     (void)popover;
-    nion_rebuild_tab_overflow((NionApp *)user_data);
+    NionApp *app = user_data;
+
+    /* v2.3.4 (T2-6): each opening starts from the full list. Keeping a stale
+     * filter would silently hide tabs from someone who opened the menu to find
+     * one, which is the exact problem this menu exists to solve. The flag stops
+     * the clear from being handled as if the user had typed. */
+    if (app && app->tab_filter_entry) {
+        app->tab_filter_updating = TRUE;
+        gtk_editable_set_text(GTK_EDITABLE(app->tab_filter_entry), "");
+        app->tab_filter_updating = FALSE;
+    }
+    nion_rebuild_tab_overflow(app);
+}
+
+/* v2.3.4 (T2-6): typing in the filter rebuilds the rows. The entry itself is
+ * outside the rebuilt container, so the caret and the half-typed word survive. */
+static void
+on_tab_filter_changed(GtkEditable *editable, gpointer user_data)
+{
+    (void)editable;
+    NionApp *app = user_data;
+    if (!app || app->tab_filter_updating)
+        return;
+    nion_rebuild_tab_overflow(app);
+}
+
+/* Down from the field steps into the list, the way every filter box behaves.
+ * Without this the arrow keys would be swallowed by the entry and the list
+ * would only be reachable with the mouse. */
+static gboolean
+on_tab_filter_key(GtkEventControllerKey *controller, guint keyval, guint keycode,
+                  GdkModifierType state, gpointer user_data)
+{
+    (void)controller;
+    (void)keycode;
+    (void)state;
+    NionApp *app = user_data;
+    if (!app || !app->tab_overflow_box)
+        return FALSE;
+
+    /* Escape means "get me out of this field": it clears what was typed, and on
+     * an already empty field it closes the menu. GtkSearchEntry only clears, so
+     * without this a user could not close the menu with the key everyone
+     * reaches for, and the menu would look stuck open. */
+    if (keyval == GDK_KEY_Escape) {
+        const gchar *text =
+            gtk_editable_get_text(GTK_EDITABLE(app->tab_filter_entry));
+        if (text && *text) {
+            app->tab_filter_updating = TRUE;
+            gtk_editable_set_text(GTK_EDITABLE(app->tab_filter_entry), "");
+            app->tab_filter_updating = FALSE;
+            nion_rebuild_tab_overflow(app);
+            return TRUE;
+        }
+        if (app->tab_overflow_popover)
+            gtk_popover_popdown(GTK_POPOVER(app->tab_overflow_popover));
+        return TRUE;
+    }
+
+    if (keyval != GDK_KEY_Down)
+        return FALSE;
+
+    for (GtkWidget *child = gtk_widget_get_first_child(app->tab_overflow_box);
+         child; child = gtk_widget_get_next_sibling(child)) {
+        if (GTK_IS_BUTTON(child)) {
+            gtk_widget_grab_focus(child);
+            return TRUE;
+        }
+    }
+    return FALSE;
 }
 
 GtkWidget *nion_build_tab_overflow_button(NionApp *app)
@@ -1308,12 +1452,34 @@ GtkWidget *nion_build_tab_overflow_button(NionApp *app)
     gtk_widget_set_margin_start(box, 6);
     gtk_widget_set_margin_end(box, 6);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), box);
-    gtk_popover_set_child(GTK_POPOVER(popover), scroller);
+
+    /* v2.3.4 (T2-6): the filter field sits above the scroll area and outside the
+     * rebuilt container, so a rebuild never destroys the widget the user is
+     * typing into. */
+    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *filter = gtk_search_entry_new();
+    gtk_widget_set_margin_start(filter, 6);
+    gtk_widget_set_margin_end(filter, 6);
+    gtk_widget_set_margin_top(filter, 6);
+    gtk_widget_set_margin_bottom(filter, 6);
+    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(filter), "Filter tabs");
+    gtk_widget_set_tooltip_text(filter, "Type to narrow the list. Every word must match "
+                                        "a tab title or address.");
+    g_signal_connect(filter, "changed", G_CALLBACK(on_tab_filter_changed), app);
+    GtkEventController *filter_keys = gtk_event_controller_key_new();
+    g_signal_connect(filter_keys, "key-pressed", G_CALLBACK(on_tab_filter_key), app);
+    gtk_widget_add_controller(filter, filter_keys);
+
+    gtk_box_append(GTK_BOX(outer), filter);
+    gtk_box_append(GTK_BOX(outer), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    gtk_box_append(GTK_BOX(outer), scroller);
+    gtk_popover_set_child(GTK_POPOVER(popover), outer);
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
 
     app->tab_overflow_button = button;
     app->tab_overflow_popover = popover;
     app->tab_overflow_box = box;
+    app->tab_filter_entry = filter;
 
     /* The menu content is rebuilt every time it opens, so a tab closed in the
      * meantime can never leave a dead row behind. */
