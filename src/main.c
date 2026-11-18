@@ -623,6 +623,44 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     };
     nion_webview_set_callbacks(&webview_callbacks);
 
+    /* Four modules extracted in Phase 6 kept their callback hook but never had
+     * it filled in here, so every pointer in their `cb` struct stayed NULL and
+     * the callbacks silently did nothing. Consequences measured before this
+     * fix (NiOn 2.2.6): the bookmark star was permanently insensitive and
+     * Ctrl+D / "Bookmark Current Page" / "Open" in the bookmarks window did
+     * nothing; "Retry" on a download always answered "no active tab"; the
+     * site-data switches read a NULL current tab and showed the wrong state,
+     * and clearing a site's data never reloaded it; preference changes never
+     * refreshed controls or the site panel. Registering them here is the whole
+     * fix: main.c is the composition root, so it is the only place that may
+     * know which implementation fills each module's hooks. */
+    static const NionBookmarkCallbacks bookmark_callbacks = {
+        .current_tab = nion_current_tab,
+        .new_tab = nion_new_tab,
+        .set_status = nion_set_status,
+    };
+    nion_bookmarks_set_callbacks(&bookmark_callbacks);
+
+    static const NionDownloadCallbacks download_callbacks = {
+        .current_tab = nion_current_tab,
+        .set_status = nion_set_status,
+    };
+    nion_downloads_set_callbacks(&download_callbacks);
+
+    static const NionSettingsCallbacks settings_callbacks = {
+        .set_status = nion_set_status,
+        .update_controls = nion_update_controls,
+        .update_site_info = nion_update_site_info,
+    };
+    nion_settings_set_callbacks(&settings_callbacks);
+
+    static const NionSiteDataCallbacks site_data_callbacks = {
+        .current_tab = nion_current_tab,
+        .set_status = nion_set_status,
+        .apply_content_filter_to_window = nion_apply_content_filter_to_window,
+    };
+    nion_site_data_set_callbacks(&site_data_callbacks);
+
     nion_apply_css();
     nion_prepare_appimage_webkit_sandbox();
     nion_prepare_dirs(app);
