@@ -47,6 +47,26 @@
  * from data already on this device (history, bookmarks, open tabs); no
  * keystroke ever leaves the machine to be completed somewhere else. */
 #define NION_AUTOCOMPLETE_MAX_RESULTS 8
+/* Reading list, saved for offline (v2.3.3, roadmap T1-5).
+ *
+ * A page saved for later is stored as TEXT, not as a copy of the page. Keeping
+ * the HTML would keep its external images, stylesheets and frames too, so
+ * "reading it offline" would quietly try to fetch them and the feature would be
+ * offline in name only. Text is the part that can honestly be read with no
+ * network at all, and it is rendered by GTK rather than by WebKit, so opening a
+ * saved page cannot issue a request even by accident.
+ *
+ * The limit is per entry and generous for an article but small enough that the
+ * whole file stays rewritable in one go. */
+#define NION_MAX_READING_LIST 500
+#define NION_MAX_READING_TEXT_BYTES (256 * 1024)
+#define NION_MAX_READING_FILE_BYTES (16 * 1024 * 1024)
+#define NION_MAX_READING_TITLE_CHARS 240
+#define NION_READING_FORMAT 1
+/* A page that yields less text than this is not worth calling reading material
+ * (an error page, a login wall, a page still loading). Refuse rather than save
+ * an entry that would disappoint when opened. */
+#define NION_MIN_READABLE_CHARS 200
 #define NION_MAX_CLOSED_TABS 10
 #define NION_MAX_SITE_ZOOM_FILE_BYTES (1024 * 1024)
 #define NION_MAX_SITE_ZOOM_ENTRIES 2048
@@ -77,6 +97,7 @@ typedef struct _NionTab NionTab;
 typedef struct _NionDownload NionDownload;
 typedef struct _NionBookmark NionBookmark;
 typedef struct _NionHistoryEntry NionHistoryEntry;
+typedef struct _NionReadingEntry NionReadingEntry;
 typedef struct _NionClearSiteRequest NionClearSiteRequest;
 typedef struct _NionClosedTab NionClosedTab;
 typedef struct _NionPermissionPrompt NionPermissionPrompt;
@@ -187,6 +208,16 @@ struct _NionHistoryEntry {
     gchar *uri;
     gint64 last_visit;   /* seconds since the epoch */
     guint visits;
+};
+
+/* One page saved for offline reading. `text` is plain text extracted at save
+ * time; nothing in this struct refers to the network. */
+struct _NionReadingEntry {
+    gchar *uri;
+    gchar *title;
+    gchar *text;
+    gint64 saved_at;   /* seconds since the epoch */
+    guint words;
 };
 
 struct _NionClosedTab {
@@ -382,6 +413,15 @@ struct _NionApp {
     /* NULL in a Private Window: private browsing must not write a URL trail,
      * so the private app never receives a history path at all. */
     GPtrArray *history;
+    /* v2.3.3 (T1-5): pages saved for offline reading. NULL in a Private Window,
+     * for the same reason history is: what someone reads in private is not a
+     * trail to keep. */
+    gchar *reading_list_file;
+    GPtrArray *reading_list;
+    GtkWidget *reading_window;
+    GtkWidget *reading_list_box;
+    GtkWidget *reading_empty_label;
+    GtkWidget *reading_count_label;
     GtkWidget *history_window;
     GtkWidget *history_list;
     GtkWidget *history_search_entry;

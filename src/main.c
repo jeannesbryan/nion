@@ -29,6 +29,7 @@
 #include "webview.h"
 #include "bookmarks.h"
 #include "history.h"
+#include "reading-list.h"
 #include "downloads.h"
 #include "settings.h"
 #include "site-data.h"
@@ -459,6 +460,8 @@ static void nion_install_actions(NionApp *app)
         { "bookmark-page", action_bookmark_page, NULL, NULL, NULL, {0} },
         { "bookmarks", action_bookmarks, NULL, NULL, NULL, {0} },
         { "history", action_history, NULL, NULL, NULL, {0} },
+        { "save-for-later", action_save_for_later, NULL, NULL, NULL, {0} },
+        { "reading-list", action_reading_list, NULL, NULL, NULL, {0} },
         { "preferences", action_preferences, NULL, NULL, NULL, {0} },
         { "bridges", action_bridges, NULL, NULL, NULL, {0} },
         { "privacy-audit", action_privacy_audit, NULL, NULL, NULL, {0} },
@@ -501,6 +504,13 @@ static void nion_install_actions(NionApp *app)
     /* Ctrl+H is free: the existing bindings are T, Shift+P, Shift+U, W,
      * Shift+T, L/F6, R/F5, Shift+R, F, plus, minus, 0, Alt+R, P, J, D, F11. */
     const gchar *history_accels[] = { "<Primary>h", NULL };
+    /* Ctrl+Shift+S saves the current page. Ctrl+S is already "save page" in
+     * spirit but NiOn has no page save, and Ctrl+D is the bookmark shortcut;
+     * Ctrl+Shift+S keeps the pair adjacent without colliding with either. */
+    const gchar *save_for_later_accels[] = { "<Primary><Shift>s", NULL };
+    /* Ctrl+Shift+B is free; Ctrl+B alone is not used by NiOn either, but the
+     * shifted form groups it with the other library shortcuts. */
+    const gchar *reading_list_accels[] = { "<Primary><Shift>b", NULL };
 
     gtk_application_set_accels_for_action(app->application, "win.new-tab", new_tab_accels);
     gtk_application_set_accels_for_action(app->application, "win.private-window", private_window_accels);
@@ -525,6 +535,10 @@ static void nion_install_actions(NionApp *app)
     gtk_application_set_accels_for_action(app->application, "win.downloads", downloads_accels);
     gtk_application_set_accels_for_action(app->application, "win.bookmark-page", bookmark_accels);
     gtk_application_set_accels_for_action(app->application, "win.history", history_accels);
+    gtk_application_set_accels_for_action(app->application, "win.save-for-later",
+                                          save_for_later_accels);
+    gtk_application_set_accels_for_action(app->application, "win.reading-list",
+                                          reading_list_accels);
 }
 
 static void on_activate(GtkApplication *application, gpointer user_data)
@@ -660,6 +674,11 @@ static void on_activate(GtkApplication *application, gpointer user_data)
         .set_status = nion_set_status,
     };
     nion_history_set_callbacks(&history_callbacks);
+    static const NionReadingCallbacks reading_callbacks = {
+        .new_tab = nion_new_tab,
+        .set_status = nion_set_status,
+    };
+    nion_reading_list_set_callbacks(&reading_callbacks);
 
     static const NionSettingsCallbacks settings_callbacks = {
         .set_status = nion_set_status,
@@ -683,6 +702,7 @@ static void on_activate(GtkApplication *application, gpointer user_data)
     nion_load_preferences(app);
     nion_load_bookmarks(app);
     nion_history_load(app);
+    nion_reading_list_load(app);
     nion_load_site_zoom(app);
     nion_load_site_javascript(app);
     nion_load_content_blocking(app);

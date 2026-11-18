@@ -15,6 +15,7 @@
 #include "downloads.h"
 #include "bookmarks.h"
 #include "history.h"
+#include "reading-list.h"
 #include "tabs.h"
 #include "tor-core.h"
 #include "tor-status.h"
@@ -455,6 +456,10 @@ void nion_prepare_dirs(NionApp *app)
     /* Local browsing history. Private Windows deliberately never receive this
      * path (see nion_open_private_window), so they cannot write a trail. */
     app->history_file = g_build_filename(app->data_dir, "history.ini", NULL);
+    /* Pages saved for offline reading (v2.3.3, T1-5). Same rule as history:
+     * a Private Window never receives this path. */
+    app->reading_list_file = g_build_filename(app->data_dir, "reading-list.ini", NULL);
+    app->reading_list = g_ptr_array_new_with_free_func(nion_reading_entry_free);
     app->site_zoom_file = g_build_filename(app->config_dir, "site-zoom.ini", NULL);
     app->site_javascript_file = g_build_filename(app->config_dir, "site-javascript.ini", NULL);
     app->content_blocking_file = g_build_filename(app->config_dir, "content-blocking.ini", NULL);
@@ -646,9 +651,12 @@ static gboolean nion_free_private_app_idle(gpointer user_data)
     g_clear_pointer(&app->preferences_file, g_free);
     g_clear_pointer(&app->bookmarks_file, g_free);
     g_clear_pointer(&app->history_file, g_free);
+    g_clear_pointer(&app->reading_list_file, g_free);
 
     if (app->history)
         g_ptr_array_unref(app->history);
+    if (app->reading_list)
+        g_ptr_array_unref(app->reading_list);
 
     if (app->bookmarks)
         g_ptr_array_unref(app->bookmarks);
@@ -777,6 +785,10 @@ static void nion_open_private_window(NionApp *source)
      * with the normal window by design (documented in the leak audit); a URL
      * trail is not. Leaving the path NULL means even a mistaken call cannot
      * record private browsing, because every write path requires the path. */
+    /* reading_list_file is left NULL for the same reason as history_file: what
+     * was saved for later from a Private Window would be the trail the window
+     * exists to avoid. reading_list stays NULL too, so the save path has
+     * nothing to write into even if it were called. */
     app->download_dir = g_strdup(owner->download_dir);
     app->bookmarks = owner->bookmarks ? g_ptr_array_ref(owner->bookmarks)
                                      : g_ptr_array_new_with_free_func(nion_bookmark_free);
@@ -855,6 +867,9 @@ static void nion_cleanup(NionApp *app)
                 /* Expected NULL for a Private Window; freed defensively so a
                  * future change cannot leak the entry list. */
                 g_clear_pointer(&private_app->history_file, g_free);
+                /* Expected NULL for a Private Window; freed defensively. */
+                g_clear_pointer(&private_app->reading_list_file, g_free);
+                if (private_app->reading_list) g_ptr_array_unref(private_app->reading_list);
                 if (private_app->history) g_ptr_array_unref(private_app->history);
                 if (private_app->bookmarks) g_ptr_array_unref(private_app->bookmarks);
                 if (private_app->site_javascript_disabled) g_hash_table_unref(private_app->site_javascript_disabled);
@@ -887,6 +902,9 @@ static void nion_cleanup(NionApp *app)
     g_clear_pointer(&app->downloads_file, g_free);
     g_clear_pointer(&app->bookmarks_file, g_free);
     g_clear_pointer(&app->history_file, g_free);
+    g_clear_pointer(&app->reading_list_file, g_free);
+    if (app->reading_list)
+        g_ptr_array_unref(app->reading_list);
     g_clear_pointer(&app->site_zoom_file, g_free);
     g_clear_pointer(&app->site_javascript_file, g_free);
     g_clear_pointer(&app->content_blocking_file, g_free);

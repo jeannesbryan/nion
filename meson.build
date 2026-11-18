@@ -28,6 +28,9 @@ gtk_dep = dependency('gtk4', version: '>=' + gtk_min_version)
 webkit_dep = dependency('webkitgtk-6.0', version: '>=' + webkitgtk_min_version)
 gio_dep = dependency('gio-2.0')
 soup_dep = dependency('libsoup-3.0')
+# Reading list reads what the page says about itself, so it needs the JavaScript
+# core type that evaluate_javascript() hands back.
+jsc_dep = dependency('javascriptcoregtk-6.0')
 
 nion_resources = gnome.compile_resources(
   'nion-resources',
@@ -77,6 +80,7 @@ executable(
   'src/history.c',
   'src/autocomplete.c',
   'src/tor-status.c',
+  'src/reading-list.c',
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',
@@ -85,7 +89,7 @@ executable(
   'src/ui.c',
   nion_resources,
   include_directories: include_directories('.'),
-  dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep],
+  dependencies: [gtk_dep, webkit_dep, gio_dep, soup_dep, jsc_dep],
   install: true,
 )
 

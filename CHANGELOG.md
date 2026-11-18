@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.3.3 — Development
+
+Pages can be saved for later and read with no network at all.
+
+The obvious way to build this is to keep a copy of the page. That copy would
+keep its images, stylesheets and frames too, so opening it later would quietly
+try to fetch them, and "saved for offline reading" would be a label rather than a
+fact. A browser whose entire premise is that nothing leaves without Tor should
+not ship an offline feature that needs the network to look right.
+
+So a saved page is text. Choosing Save for Later takes the title, the address and
+the page text, with the scripts, styles, frames and navigation chrome stripped
+out, and stores that. Reading it back draws the text in a GtkTextView rather than
+in a WebView, so opening a saved page cannot issue a request even by accident.
+The reading window says plainly that images are not kept, because leaving that
+unsaid would make the first read feel broken.
+
+Saving the same address twice refreshes the entry instead of adding a second
+copy: the newer extraction may hold the full article where the first save caught
+a page that had only half loaded. Newest saves come first. The list is capped,
+each entry is capped, and the file is rewritten atomically so a crash mid-save
+cannot corrupt a list that was fine.
+
+A Private Window gets no reading list at all, and no file path to one. What
+someone saves while browsing privately is precisely the trail the window exists
+to avoid, so the refusal is explicit as well as structural, and the menu does not
+offer the actions in that window.
+
+A page that yields almost no text is refused rather than saved: a login wall or
+an error page is not reading material, and an entry that disappoints when opened
+is worse than a clear "nothing worth saving here".
+
+### Added
+
+- **`src/reading-list.c`**: the store (GKeyFile written atomically), the same
+  URI gate the history store uses, whitespace normalization with UTF-8-safe
+  truncation, a word count, a worth-saving threshold, and a byte-exact parser for
+  the payload the page returns.
+- **Save for Later** (Ctrl+Shift+S) and **Reading List** (Ctrl+Shift+B), with menu
+  entries shown only where they can work.
+- **The offline reader**: a transient window with the saved text, its address,
+  when it was saved, and how many words.
+- `scripts/test-reading-list-stage4.sh`: 80 behavioural checks linked against the
+  production `src/reading-list.c`, the same run under AddressSanitizer, wiring
+  assertions (text-only reader, private window has no store, gate applied to save
+  and load, no accelerator collisions), and ten mutations, each required to fail.
+
+### Fixed
+
+- **A leak in the text normalizer**, found by the sanitizer build of the new
+  test: hitting the entry size cap broke out of the loop before the current line
+  was freed. The mutation check for the payload parser had to be judged under
+  AddressSanitizer too, because dropping its length check reads outside the
+  buffer rather than returning a different value: a wrong return value can be
+  asserted on, undefined behaviour cannot.
+
 ## 2.3.2 — Development
 
 Tor is slow by nature, and NiOn used to hide that behind a single percentage.
