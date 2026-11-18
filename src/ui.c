@@ -24,6 +24,8 @@
 #include "app.h"
 #include "autocomplete.h"
 #include "idn-guard.h"
+#include "content-filter.h"
+#include "privacy-dashboard.h"
 #include "ui.h"
 
 /* Tab creation / current-tab / status / action-table operations that
@@ -416,6 +418,72 @@ static gchar *nion_home_html(NionApp *app)
     /* v2.3.2 (T1-4): a failed bootstrap used to leave the window with no way
      * forward. The retry button is rendered only when Tor has actually failed,
      * so it never invites a second daemon while one is still working. */
+    /* v2.3.6 (T2-8): the dashboard is built from what NiOn actually knows, in a
+     * GTK-free module, so every figure on the page has a source and anything
+     * unmeasured says so instead of showing a plausible number. */
+    NionDashFacts dash_facts = { 0 };
+    dash_facts.is_private = app->is_private;
+    dash_facts.tor_ready = app->tor_ready;
+    dash_facts.tor_failed = app->tor_failed;
+    dash_facts.tor_bootstrap_percent = app->tor_bootstrap_percent;
+    /* tor_socks_port is a number; the dashboard wants the address a user can
+     * recognise, so it is formatted here rather than guessed there. */
+    gchar *dash_socks = (app->tor_socks_port && !app->tor_failed && !app->is_private)
+        ? g_strdup_printf("127.0.0.1:%u", (guint)app->tor_socks_port) : NULL;
+    dash_facts.tor_socks_port = dash_socks;
+    dash_facts.security_level = security_label;
+    dash_facts.block_third_party_cookies = app->block_third_party_cookies;
+    dash_facts.content_filter_ready = app->content_filter_ready;
+    dash_facts.content_filter_failed =
+        nion_content_filter_has_failed(app);
+    /* A private window holds no site overrides at all, so the count is not
+     * merely zero: it does not exist. -1 tells the module the difference. */
+    dash_facts.site_overrides = app->is_private
+        ? -1
+        : (app->site_javascript_disabled ? (gint)g_hash_table_size(app->site_javascript_disabled) : 0)
+          + (app->site_javascript_enabled ? (gint)g_hash_table_size(app->site_javascript_enabled) : 0);
+    dash_facts.temporary_permissions = app->temporary_permissions
+        ? (gint)g_hash_table_size(app->temporary_permissions) : 0;
+    dash_facts.history_entries = (app->history && !app->is_private)
+        ? app->history->len : 0;
+    dash_facts.reading_list_entries = (app->reading_list && !app->is_private)
+        ? app->reading_list->len : 0;
+    dash_facts.active_tabs = active_tabs;
+    dash_facts.suspended_tabs = discarded_tabs;
+
+    NionDashboard *dashboard = nion_dashboard_build(&dash_facts);
+    gchar *dash_summary = nion_dashboard_summary(dashboard);
+
+    GString *dash_html = g_string_new(NULL);
+    for (guint i = 0; i < dashboard->count; i++) {
+        const NionDashTile *tile = &dashboard->tiles[i];
+        gchar *safe_label = g_markup_escape_text(tile->label ? tile->label : "", -1);
+        gchar *safe_value = g_markup_escape_text(tile->value ? tile->value : "", -1);
+        gchar *safe_detail = g_markup_escape_text(tile->detail ? tile->detail : "", -1);
+        g_string_append_printf(dash_html,
+                               "<div class='tile%s'><span>%s</span><b>%s</b>"
+                               "<i>%s</i></div>",
+                               tile->attention ? " attention" : "",
+                               safe_label, safe_value, safe_detail);
+        g_free(safe_label);
+        g_free(safe_value);
+        g_free(safe_detail);
+    }
+    gchar *dash_block = g_string_free(dash_html, FALSE);
+
+    /* Measured, not assumed: the window test reads this line to know the tiles
+     * reached the rendered page, because a page built correctly and then dropped
+     * by a format-string mistake still leaves the user without a dashboard. */
+    if (g_getenv("NION_TAB_DEBUG")) {
+        guint attention = 0;
+        for (guint i = 0; i < dashboard->count; i++) {
+            if (dashboard->tiles[i].attention)
+                attention++;
+        }
+        g_printerr("home-dashboard tiles=%u attention=%u summary=[%s]\n",
+                   dashboard->count, attention, dash_summary);
+    }
+
     gchar *retry_block = app->tor_failed
         ? g_strdup("<a class='identity' href='nion://retry-tor/'>"
                    "<span class='ic'>↻</span>Try Tor again</a>")
@@ -449,6 +517,9 @@ static gchar *nion_home_html(NionApp *app)
         ".tile{border:1px solid var(--border);border-radius:10px;padding:12px 13px;background:var(--card);text-align:left}"
         ".tile span{display:block;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;font-weight:700}"
         ".tile b{font-size:1.02rem;color:var(--fg)}"
+        ".tile i{display:block;margin-top:5px;font-style:normal;font-size:.76rem;color:var(--muted);line-height:1.35}"
+        ".tile.attention{border-color:#c0392b}"
+        ".dash-summary{margin:14px 0 8px;font-size:.82rem;color:var(--muted)}"
         ".identity{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:12px;"
         "border:1px solid var(--border);border-radius:10px;padding:13px;background:var(--card);"
         "color:var(--fg);font-weight:800;text-decoration:none;font-size:.95rem;letter-spacing:.01em}"
@@ -460,11 +531,8 @@ static gchar *nion_home_html(NionApp *app)
         "<p>Minimal Onion · browser over Tor</p></div></div>"
         "<section class='status %s'><div class='status-line'><span class='dot'>%s</span><span>%s</span></div>"
         "<p>%s</p></section>"
-        "<div class='dash'>"
-        "<div class='tile'><span>Security level</span><b>%s</b></div>"
-        "<div class='tile'><span>Tabs active</span><b>%u</b></div>"
-        "<div class='tile'><span>Discarded</span><b>%u</b></div>"
-        "</div>"
+        "<p class='dash-summary'>%s</p>"
+        "<div class='dash'>%s</div>"
         "%s"
         "<a class='identity' href='nion://new-identity/'><span class='ic'>↻</span>New Identity</a>"
         "<div class='shortcuts'><div class='shortcut'><kbd>Ctrl+L</kbd><br>Focus address</div>"
@@ -472,12 +540,16 @@ static gchar *nion_home_html(NionApp *app)
         "<div class='shortcut'><kbd>Ctrl+Tab</kbd><br>Next tab</div></div>"
         "<footer>NiOn %s · Open websites. Open onions. Everything through Tor.</footer>"
         "</main></body></html>",
-        state_class, state_glyph, state, detail, retry_block, security_label,
-        active_tabs, discarded_tabs, NION_VERSION);
+        state_class, state_glyph, state, detail, retry_block,
+        dash_summary, dash_block, NION_VERSION);
 
     g_free(state);
     g_free(detail);
     g_free(retry_block);
+    g_free(dash_socks);
+    g_free(dash_summary);
+    g_free(dash_block);
+    nion_dashboard_free(dashboard);
     return html;
 }
 

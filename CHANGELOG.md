@@ -1,5 +1,64 @@
 # Changelog
 
+## 2.3.6 — Development
+
+The start page now reports what the browser is actually doing about privacy.
+
+The governing rule is that every figure on it comes from something NiOn really
+knows. A privacy page showing a plausible "1,482 trackers blocked" that was never
+counted is worse than no page at all: it teaches the reader to trust a number
+that means nothing. So where NiOn does not measure something, the dashboard says
+so in words instead of inventing a value. "Requests blocked: Not counted" is a
+worse-looking line than a big number and a more honest one, and it is what makes
+the other tiles worth believing.
+
+Tiles are built from state the browser already keeps: Tor state and bootstrap
+percentage, the local SOCKS address actually in use, third-party cookie policy,
+whether the content filter loaded, the security level, per-site overrides,
+temporary permission grants, how much history and reading list exist on disk, and
+how many tabs are open or suspended.
+
+Two things it deliberately does not soften:
+
+- A failed Tor reports "Unavailable" and says in the same sentence that a failed
+  connection is never replaced by a direct one. A failure that reads as fine
+  would undo the whole point of a fail-closed browser.
+- A filter list that failed to load reports "Not active", not "Active". Claiming
+  a protection is running when it is not is the one lie this page cannot afford.
+
+A private window is handled by absence rather than by zero: it reports that no
+site overrides are kept and that nothing from this window is written, instead of
+"0 history entries", which would read as a measurement of a store that does not
+exist there.
+
+### Added
+
+- **`src/privacy-dashboard.c`**: a GTK-free module that turns a facts struct into
+  tiles with a value, an explanation, and an honesty marker. Every tile is either
+  KNOWN, UNKNOWN, or UNAVAILABLE, and the summary counts only the tiles that
+  carry a value.
+- **Dashboard on the start page**, replacing the three hardcoded tiles, with
+  attention states drawn distinctly. Tile text is escaped before it reaches the
+  HTML.
+- `scripts/test-privacy-dashboard-stage1.sh`: 50 behavioural checks linked
+  against the production module, the same run under AddressSanitizer, wiring
+  assertions (page renders the module, text escaped, module freed, private window
+  keeps no counts), six mutations, and a real-window pass that renders the start
+  page and reads the tile count the page actually logged.
+
+### Notes
+
+- Two mistakes of mine, both caught by the harness rather than by review: the
+  window pass first never launched the app at all (a rewrite dropped the call, so
+  the log file did not exist), and the "private window claims disk writes"
+  mutation survived because the assertion only looked for the word "Nothing" and
+  accepted "Nothing unusual". Both are fixed; the assertion now requires the
+  specific claim.
+- The window pass verifies the rendered page through a debug line the renderer
+  emits, because the page itself is not written to disk. A tile built correctly
+  and then dropped by a format-string mistake still leaves the user without a
+  dashboard, and nothing else in the suite would notice.
+
 ## 2.3.5 — Development
 
 Address bar homograph protection, computed on this machine.

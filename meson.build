@@ -83,6 +83,7 @@ executable(
   'src/reading-list.c',
   'src/tab-filter.c',
   'src/idn-guard.c',
+  'src/privacy-dashboard.c',
   'src/downloads.c',
   'src/settings.c',
   'src/site-data.c',
