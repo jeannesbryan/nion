@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.3.7 — Development
+## 2.3.7 — Stable
 
 A data saver that blocks requests instead of hiding things.
 
@@ -62,6 +62,32 @@ until the font arrives, must both bring a request back.
 Not measured, and stated as such: the video (media) case is blocked by the same
 rule as the image and the font but is not separately asserted, because the
 harness page has no autoplay and the request timing is unreliable.
+
+### Bundled Tor moves to the 16.0.3 Expert Bundle (Tor 0.4.9.17)
+
+The runtime NiOn ships had been 16.0.1 (Tor 0.4.9.16) since 2.2.4. A higher
+number was never a reason to move: 16.0.2 exists for Android only, so for two
+weeks the latest Linux bundle genuinely was the one we already had, and checking
+the archive per platform was the only way to know that. 16.0.3 is the first Linux
+bundle since, and it carries Tor 0.4.9.17.
+
+What the upgrade buys a client is small, and saying so is more useful than
+implying otherwise. 0.4.9.17 is an emergency release aimed mostly at relays; on
+the client side it adds TROVE-2026-075, refusing a RESOLVED cell whose hostname is
+invalid, plus a latent relay assertion that cannot trigger without a relay's
+consensus position. Nothing in it changes how a single browsing session behaves.
+It is bundled anyway because a browser that pins a daemon should not keep pinning
+an old one.
+
+Verification was done against the artifact and not the release page. The tarball
+was signed by the fingerprint already pinned in the manifest (EF6E...8290, the
+same key that signed 16.0.1), and the unpacked binary reports
+`Tor version 0.4.9.17 (git-a00b3e0bd288e9ae)`. Its libc requirement is 2.17, far
+below the 2.39 floor the AppImage already needs, so the upgrade does not narrow
+which systems can run NiOn.
+
+No source changes: this release is the previous source tree with a newer daemon
+inside it.
 
 ## 2.3.6 — Development
 
